@@ -1,143 +1,144 @@
-# LavaMoat - a Webpack Plugin for LavaMoat-protected builds
+# LavaMoat Webpack Plugin
 
-**NOTE: this is a proof of concept and does not work yet**
+> Putting lava in your pack. For security. We need to work on our metaphors.
 
-this webpack plugin is a proof of concept and does not work yet
+LavaMoat Webpack Plugin wraps each module in the bundle in a [Compartment](https://github.com/endojs/endo/tree/master/packages/ses#compartment) and enforces LavaMoat Policies independently per package.
 
----
+## Usage
 
-[**Quick Start Example**](https://github.com/LavaMoat/lavamoat-webpack/blob/master/test/project1/README.md)
+> Policy generation is now built into the plugin. While it might get confused about aliases and custom resolvers, it should generally work even when they're in use.
 
-`lavamoat-webpack` is a [WebPack][Webpack] plugin for generating app bundles protected by [LavaMoat](https://github.com/LavaMoat/overview) where modules are defined in [SES][SesGithub] containers. It aims to reduce the risk of "software supplychain attacks", malicious code in the app dependency graph.
+1. Create a webpack bundle with the LavaMoat plugin enabled and the `generatePolicy` flag set to true
+2. Make sure you add a `<script src="./lockdown"></script>` before all other scripts or enable the `HtmlWebpackPluginInterop` option if you're using `html-webpack-plugin`. (Note there's no `.js` there because it's the only way to prevent webpack from minifying the file thus undermining its security guarantees)
+3. Tweak the policy if needed with policy-override.json
 
-It attempts to reduce this risk in three ways:
-  1. Prevent modifying JavaScript's primordials (Object, String, Number, Array, ...)
-  2. Limit access to the platform API (window, document, XHR, etc) per-package
-  3. Prevent packages from corrupting other packages
+> The plugin is emitting lockdown without the `.js` extension because that's the only way to prevent it from getting minified, which is likely to break it.
 
-1 and 2 are provided by the SES container. Platform access can be passed in via configuration.
+The LavaMoat plugin takes an options object with the following properties (all optional):
 
-3 is achieved by providing a unique mutable copy of the imported module's exports. Mutating the module's copy of the exports does not affect other modules.
+| Property                   | Description                                                                                                                                                                                                                                                                                                           | Default                  |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `policyLocation`           | Directory to store policy files in.                                                                                                                                                                                                                                                                                   | `./lavamoat/webpack`     |
+| `generatePolicy`           | Whether to generate the `policy.json` file. Generated policy is used in the build immediately. `policy-override.json` is applied before bundling, if present.                                                                                                                                                         | `false`                  |
+| `emitPolicySnapshot`       | If enabled, emits the result of merging policy with overrides into the output directory of Webpack build for inspection. The file is not used by the bundle.                                                                                                                                                          | `false`                  |
+| `readableResourceIds`      | Boolean to decide whether to keep resource IDs human readable (possibly regardless of production/development mode). If `false`, they are replaced with a sequence of numbers. Keeping them readable may be useful for debugging when a policy violation error is thrown. By default, follows the Webpack config mode. | `(mode==='development')` |
+| `lockdown`                 | Configuration for [SES lockdown][]. Setting the option replaces defaults from LavaMoat.                                                                                                                                                                                                                               | reasonable defaults      |
+| `HtmlWebpackPluginInterop` | Boolean to add a script tag to the HTML output for `./lockdown` file if `HtmlWebpackPlugin` is in use.                                                                                                                                                                                                                | `false`                  |
+| `inlineLockdown`           | A RegExp for matching files to be prepended with lockdown (instead of adding it as a file to the output directory).                                                                                                                                                                                                   |
+| `runChecks`                | Boolean property to indicate whether to check resulting code with wrapping for correctness.                                                                                                                                                                                                                           | `false`                  |
+| `diagnosticsVerbosity`     | Number property to represent diagnostics output verbosity. A larger number means more overwhelming diagnostics output. Setting a positive verbosity will enable `runChecks`.                                                                                                                                          | `0`                      |
+| `debugRuntime`             | Only for local debugging use - Enables debugging tools that help detect gaps in generated policy and add missing entries to overrides                                                                                                                                                                                 | `false`                  |
+| `policy`                   | The LavaMoat policy object (if not loading from file; see `policyLocation`)                                                                                                                                                                                                                                           | `undefined`              |
 
-[Webpack]: https://github.com/webpack/webpack
-[SesGithub]: https://github.com/agoric/SES
-
-```
-npm i lavamoat-webpack
-```
-
-## Anatomy of a LavaMoat bundle
-
-The `lavamoat-webpack` plugin replaces Webpack's `mainTemplate` functionality. It uses the `render` hook, a phase where all modules are exposed within chunks. This step takes all the modules and their metadata, runs them through the Lavamoat kernel, applies configuration options and returns Lavamoat protected modules back to Webpack. The final bundle content includes the kernel and configuration file.
-
-LavaMoat builds differ from standard webpack builds in that they:
-
-1. Include the app-specified LavaMoat configuration
-
-This tells the kernel what execution environment each module should be instantiated with, and what other modules may be brought in as dependencies.
-
-2. Use a custom LavaMoat kernel
-
-This kernel enforces the LavaMoat config. When requested, a module is initialized, usually by evaluation inside a SES container. The kernel also protects the module's exports from modification via a strategy provided in the config such as SES hardening, deep copies, or copy-on-write views.
-
-3. Bundle the module sources as strings
-
-Modules are SES eval'd with access only to the platform APIs specificied in the config.
-
-The result is a bundle that should work just as before, but provides some protection against supplychain attacks.
-
-## Usage 
-
-Ensure you have webpack installed:
-
-```
-npm i -g webpack
-```
-
-### Automated Config Generation
-
-Create a `webpack.config.js` with the following:
-
-```javascript
-const LavaMoatPlugin = require('...')
+```js
+const LavaMoatPlugin = require('@lavamoat/webpack')
 
 module.exports = {
-  optimization: {
-    concatenateModules: false,
-  },
+  // ... other webpack configuration properties
   plugins: [
     new LavaMoatPlugin({
-      writeAutoConfig: true,
-    })
-  ]
+      generatePolicy: true,
+      // ... settings from above, optionally
+    }),
+  ],
+  // ... other webpack configuration properties
 }
 ```
 
-Ensure an entry file exists, such as `entry.js`, then run Webpack:
+One important thing to note when using the LavaMoat plugin is that it disables the `concatenateModules` optimization in webpack. This is because concatenation won't work with wrapped modules.
 
-```bash
-webpack
+### Excluding modules
+
+> [!WARNING]
+> This is an experimental feature and excluding may be configured differently in the future if this approach is proven insecure.
+
+The default way to define specific behaviors for webpack is creating module rules. To ensure exclude rules are applied on the same exact files that match certain rules (the same RegExp may be matched against different things at different times) we're providing the exclude functionality as a loader you can add to the list of existing loaders or use individually.  
+The loader is available as `LavaMoatPlugin.exclude` from the default export of the plugin. It doesn't do anything to the code, but its presence is detected and treated as a mark on the file. Any file that's been processed by `LavaMoatPlugin.exclude` will not be wrapped in a Compartment.
+
+> [!NOTE]
+> Exclude loader will only work when used in webpack config. Specifying it inline `require('path/to/excludeLoader.js!./module.js')` will not result in module.js being excluded. (This is a security feature to prevent your dependencies from declaring they want to be excluded.)
+
+Example: avoid wrapping CSS modules:
+
+```js
+  module: {
+    rules: [
+      {
+        test: /\.css$/,
+        use: [
+          MiniCssExtractPlugin.loader,
+          'css-loader',
+          LavaMoatPlugin.exclude,
+        ],
+        // ...
+      },
+    ],
+  },
 ```
 
-First, we require `LavaMoatPlugin`. The plugin is initialized in Webpack's `plugins` option as a new instance with its own plugin options.
+See: `examples/webpack.config.js` for a complete example.
 
-We pass in `writeAutoConfig` as the only plugin option. This tells Lavamoat to parse all the dependencies and generate a configuration file with default settings at the default path `./lavamoat/lavamoat-config.json`.
+### Gotchas
 
-`writeAutoConfig` also generates a default override config file, `lavamoat-config-override.json`, in the same default directory, if it doesn't already exist. This file is useful for applying custom modifications to the config that won’t be over written. In most cases, it won't be necessary to make changes to this file, unless a more fine grain of control over module permissions is necessary. See the config override section below for more details.
+#### Implicit modules
 
-`optimization.concatenateModules` tells Webpack to find segments of the module graph which can be safely concatenated into a single module. We want to ensure this is disabled, because Lavamoat's configuration is independently module-specific.
+- Webpack may include dependencies polyfilling Node.js built-ins, such as the `events` or `buffer` packages. In other cases, it will ignore the built-ins and provide empty modules in their place (see below).
 
-### Building
+When a dependency (eg. `buffer`) is provided by Webpack, and you need to add it explicitly to your dependencies, you'll receive the following error:
 
-Once we have a config (generated from `writeAutoConfig` or otherwise), create the Webpack bundle with LavaMoat, pass in the config path and run Webpack as usual.
-
-```javascript
-  plugins: [
-    new LavaMoatPlugin({
-      config: './lavamoat/lavamoat-config.json',
-    })
-  ]
+```
+Error: LavaMoat - Encountered unknown package directory for file "/home/(...)/node_modules/buffer/index.js"
 ```
 
-```bash
-webpack
+#### Webpack-ignored modules
+
+When a built-in Node.js module is ignored, Webpack generates something like this:
+
+```js
+const nodeCrypto = __webpack_require__(/*! crypto */ '?0b7d')
 ```
 
-Here we pass in `config` with the path to our generated configuration file. `config` provides Lavamoat with the file's location, relative to the current working directory. If nothing is passed in, it defaults to `./lavamoat/lavamoat-config.json`.
+A carveout is necessary in policy enforcement for these modules.
+Sadly, even treeshaking doesn't eliminate that module. It's left there and failing to work when reached by runtime control flow.
 
-Lavamoat will now use that config in the build pipeline.
+This plugin will skip policy enforcement for such ignored modules.
 
-`config` can also be applied as an object or a function that resolves to the file path string or object literal. See `README.md` in [lavamoat-browserify](https://github.com/LavaMoat/lavamoat-browserify/blob/master/README.md).
+#### HMR
 
-### Config Override
+LavaMoat is not compatible with Hot Module Replacement (HMR). Disable LavaMoat for development builds where HMR is required while keeping it enabled for production builds.
 
-You may wish to modify the config for finer control over module permissions.
+# Security
 
-```javascript
-  plugins: [
-    new LavaMoatPlugin({
-      configOverride: './lavamoat/lavamoat-config-override.json',
-    })
-  ]
-```
+**This is an experimental software. Use at your own risk!**
 
-```bash
-webpack
-```
+- [SES lockdown][] must be added to the page without any bundling or transforming for any security guarantees to be sustained.
+  - The plugin is attempting to add it as an asset to the compilation for the sake of Developer Experience. `.js` extension is omitted to prevent minification.
+  - Optionally lockdown can be inlined into the bundle files. You need to declare which of the output files to inline lockdown runtime code to. These need to be the first file of the bundle that get loaded on the page.  
+    When you have a single bundle, you just configure a regex with one unique file name or a `.*`. It gets more complex with builds for multiple pages. The plugin doesn't attempt to guess where to inline lockdown.  
+    e.g. If you have 2 entries `user.js` and `admin.js` and a set up to suffix resulting bundles with commit id, you can use `/user\.[a-f0-9]+\.js|admin\.[a-f0-9]+\.js/` to match the files.
+- Each javascript module resulting from the webpack build is scoped to its package's policy
 
-`overrideConfig` specifies the path to the override config file. If nothing is passed in, it defaults to `lavamoat/lavamoat-config-override.json`. 
+## Threat Model
 
-Lavamoat will now apply the changes made in the override config to the generated config upon next build.
+- Webpack itself is considered trusted.
+- All plugins can bypass LavaMoat protections intentionally.
+- It's unlikely _but possible_ that a plugin can bypass LavaMoat protections _unintentionally_.
+- It should not be possible for loaders to bypass LavaMoat protections.
+- Some plugins (eg. MiniCssExtractPlugin) execute code from the bundle at build time. To make the plugin work you need to trust it and the modules it runs and add the LavaMoat.exclude loader for them.
+- This Webpack plugin _does not_ protect against malicious execution by other third-party plugins at runtime (use [LavaMoat](https://npm.im/lavamoat) for that).
 
-`configOverride` can also be applied as an object or a function that resolves to the file path string or object literal, just like `config`.
+## Webpack runtime
 
-WARNING: Do not edit the autogenerated config `lavamoat-config.json` directly. It will be overwritten if a new bundle is created using LavaMoat. Instead, edit the `lavamoat-config-overwrite.json` file generated upon running LavaMoat with `writeAutoConfig`. It merges with the original config, always taking overwrite precedence. 
+Elements of the Webpack runtime (e.g., `__webpack_require__.*`) are currently mostly left intact. To avoid opening up potential bypasses, some functionality of the Webpack runtime is not available.
 
-## Next Steps
+# Testing
 
-Include the generated bundle in some HTML and serve.
+Run `npm test` to start the automated tests.
 
-See [lavamoat-browserify](https://github.com/LavaMoat/lavamoat-browserify/blob/master/README.md) for more detailed documentation about the config.
+## Manual testing
 
+- Navigate to `example/`
+- Run `npm ci` and `npm test`
+- Open `dist/index.html` in your browser and inspect the console
 
-
+[SES lockdown]: https://github.com/endojs/endo/tree/master/packages/ses#lockdown

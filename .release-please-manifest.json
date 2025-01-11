@@ -1,0 +1,13 @@
+{
+  "packages/aa": "4.3.1",
+  "packages/allow-scripts": "3.3.1",
+  "packages/webpack": "0.7.1-beta.0",
+  "packages/browserify": "18.1.2",
+  "packages/core": "16.2.2",
+  "packages/git-safe-dependencies": "0.1.0",
+  "packages/lavapack": "7.0.5",
+  "packages/laverna": "1.2.3",
+  "packages/lavamoat-node": "9.0.5",
+  "packages/preinstall-always-fail": "2.1.0",
+  "packages/tofu": "8.0.4"
+}
