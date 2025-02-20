@@ -1,68 +1,121 @@
 'use strict'
 
 const { default: traverse } = require('@babel/traverse')
-const { getParents } = require('./util')
+const { isInFunctionDeclaration, isMemberLikeExpression } = require('./util')
 
-const nonReferenceIdentifiers = [
+/**
+ * Types which are not references to globals
+ */
+const nonReferenceIdentifiers = new Set([
+  'ArrayPatten',
+  'BreakStatement',
+  'CatchClause',
+  'ClassMethod',
+  'ContinueStatement',
+  'ExportDefaultSpecifier',
+  'ExportSpecifier',
   'FunctionDeclaration',
   'FunctionExpression',
-  'ClassMethod',
+  'ImportDefaultSpecifier',
+  'ImportNamespaceSpecifier',
+  'ImportSpecifier',
   'LabeledStatement',
-  'BreakStatement',
-  'ContinueStatement',
-  'CatchClause',
-  'ArrayPatten',
-  'RestElement'
-]
+  'MetaProperty',
+  'RestElement',
+])
 
 module.exports = { findGlobals }
 
-function findGlobals (ast) {
+/**
+ * @typedef {import('@babel/traverse').NodePath<
+ *   import('@babel/types').Identifier | import('@babel/types').ThisExpression
+ * >} IdentifierOrThisExpressionNodePath
+ */
+
+/**
+ * @param {import('@babel/types').Node} ast
+ * @returns {Map<string, IdentifierOrThisExpressionNodePath[]>}
+ */
+function findGlobals(ast) {
+  /** @type {ReturnType<typeof findGlobals>} */
   const globals = new Map()
   traverse(ast, {
     // ReferencedIdentifier
     Identifier: (path) => {
       // skip if not being used as reference
       const parentType = path.parent.type
-      if (nonReferenceIdentifiers.includes(parentType)) return
-      if (parentType === 'VariableDeclarator' && path.parent.id === path.node) return
+      if (nonReferenceIdentifiers.has(parentType)) {
+        return
+      }
+
+      if (parentType === 'VariableDeclarator' && path.parent.id === path.node) {
+        return
+      }
       // skip if this is the key side of a member expression
-      if (parentType === 'MemberExpression' && path.parent.property === path.node) return
+      if (
+        isMemberLikeExpression(path.parent) &&
+        path.parent.property === path.node
+      ) {
+        return
+      }
       // skip if this is the key side of an object pattern
-      if (parentType === 'ObjectProperty' && path.parent.key === path.node) return
-      if (parentType === 'ObjectMethod' && path.parent.key === path.node) return
+      if (parentType === 'ObjectProperty' && path.parent.key === path.node) {
+        return
+      }
+      if (parentType === 'ObjectMethod' && path.parent.key === path.node) {
+        return
+      }
 
       // skip if it refers to an existing variable
       const name = path.node.name
-      if (path.scope.hasBinding(name, true)) return
+      if (path.scope.hasBinding(name, true)) {
+        return
+      }
 
       // check if arguments refers to a var, this shouldn't happen in strict mode
       if (name === 'arguments') {
-        if (isInFunctionDeclaration(path)) return
+        if (isInFunctionDeclaration(path)) {
+          return
+        }
+      }
+
+      // private names are not globals
+      if (parentType === 'PrivateName' && path.parent.id === path.node) {
+        return
+      }
+
+      // class props are not globals
+      if (parentType === 'ClassProperty' && path.parent.key === path.node) {
+        return
       }
 
       // save global
       saveGlobal(path)
     },
     ThisExpression: (path) => {
-      if (isInFunctionDeclaration(path)) return
+      if (isInFunctionDeclaration(path)) {
+        return
+      }
       saveGlobal(path, 'this')
-    }
+    },
   })
 
   return globals
 
-  function saveGlobal (path, name = path.node.name) {
+  /**
+   * @param {IdentifierOrThisExpressionNodePath} path
+   * @param {string} [name]
+   */
+  // @ts-ignore - FIXME needs logic changes for type safety
+  function saveGlobal(path, name = path.node.name) {
     // init entry if needed
     if (!globals.has(name)) {
       globals.set(name, [])
     }
     // append ref
-    const refsForName = globals.get(name)
+    const refsForName = /** @type {IdentifierOrThisExpressionNodePath[]} */ (
+      globals.get(name)
+    )
     refsForName.push(path)
   }
-}
-
-function isInFunctionDeclaration (path) {
-  return getParents(path.parentPath).some(parent => parent.type === 'FunctionDeclaration' || parent.type === 'FunctionExpression')
 }

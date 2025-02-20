@@ -1,7 +1,7 @@
 module.exports = {
   getMemberExpressionNesting,
   getPathFromMemberExpressionChain,
-  isDirectMemberExpression,
+  isNonComputedMemberLikeExpression,
   isUndefinedCheck,
   getTailmostMatchingChain,
   reduceToTopmostApiCalls,
@@ -10,17 +10,39 @@ module.exports = {
   mergePolicy,
   objToMap,
   mapToObj,
-  getParents
+  getParents,
+  isInFunctionDeclaration,
+  isMemberLikeExpression,
 }
 
-function getMemberExpressionNesting (identifierNode, parents) {
+/**
+ * @typedef MemberExpressionNesting
+ * @property {import('./inspectPrimordialAssignments').NonComputedMemberLikeExpression[]} memberExpressions
+ * @property {import('./inspectPrimordialAssignments').MemberLikeExpression} parentOfMembershipChain
+ * @property {import('./inspectPrimordialAssignments').MemberLikeExpression
+ *   | import('@babel/types').LVal} topmostMember
+ */
+
+/**
+ * @param {import('@babel/types').Node} identifierNode
+ * @param {import('@babel/types').Node[]} parents
+ * @returns
+ */
+function getMemberExpressionNesting(identifierNode, parents) {
   // remove the identifier node itself
   const parentsOnly = parents.slice(0, -1)
   // find unbroken membership chain closest to identifier
-  const memberExpressions = getTailmostMatchingChain(parentsOnly, isDirectMemberExpression).reverse()
+  const memberExpressions = getTailmostMatchingChain(
+    /** @type {import('./inspectPrimordialAssignments').NonComputedMemberLikeExpression[]} */ (
+      parentsOnly
+    ),
+    isNonComputedMemberLikeExpression
+  ).reverse()
   // find parent of membership chain
   const hasMembershipChain = Boolean(memberExpressions.length)
-  const topmostMember = hasMembershipChain ? memberExpressions[0] : identifierNode
+  const topmostMember = hasMembershipChain
+    ? memberExpressions[0]
+    : identifierNode
   const topmostMemberIndex = parents.indexOf(topmostMember)
   if (topmostMemberIndex < 1) {
     throw Error('unnexpected value for memberTopIndex')
@@ -30,40 +52,90 @@ function getMemberExpressionNesting (identifierNode, parents) {
   return { memberExpressions, parentOfMembershipChain, topmostMember }
 }
 
-function getPathFromMemberExpressionChain (memberExpressions) {
-  const keys = memberExpressions.map(member => getNameFromNode(member.property))
+/**
+ * @param {import('./inspectPrimordialAssignments').MemberLikeExpression[]} memberExpressions
+ * @returns {string[]}
+ */
+function getPathFromMemberExpressionChain(memberExpressions) {
+  const keys = memberExpressions.map((member) =>
+    getNameFromNode(member.property)
+  )
   return keys
 }
 
-function getNameFromNode (node) {
+/**
+ * @param {import('@babel/types').Node} node
+ * @returns {string}
+ */
+function getNameFromNode(node) {
   if (node.type === 'Identifier') {
     return node.name
   } else if (node.type === 'ThisExpression') {
     return 'this'
+  } else if (node.type === 'PrivateName') {
+    return `#${node.id.name}`
   } else {
-    throw new Error(`unknown ast node type when trying to get name: "${node.type}"`)
+    throw new Error(
+      `unknown ast node type when trying to get name: "${node.type}"`
+    )
   }
 }
 
-function isDirectMemberExpression (node) {
-  return node.type === 'MemberExpression' && !node.computed
+/**
+ * @param {import('@babel/types').Node} node
+ * @returns {node is import("./inspectPrimordialAssignments").MemberLikeExpression}
+ */
+function isMemberLikeExpression(node) {
+  return (
+    node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression'
+  )
 }
 
-function isUndefinedCheck (identifierNode, parents) {
-  const parentExpression = parents[parents.length - 2]
-  const isTypeof = (parentExpression.type === 'UnaryExpression' || parentExpression.operator === 'typeof')
+/**
+ * @param {import('./inspectPrimordialAssignments').MemberLikeExpression} node
+ * @returns {node is import("./inspectPrimordialAssignments").NonComputedMemberLikeExpression}
+ */
+function isNonComputedMemberLikeExpression(node) {
+  return !node.computed && isMemberLikeExpression(node)
+}
+
+/**
+ * @param {import('@babel/types').LVal} identifierNode
+ * @param {import('@babel/types').Node[]} parents
+ * @returns {boolean}
+ */
+function isUndefinedCheck(identifierNode, parents) {
+  const parentExpression =
+    /** @type {import('@babel/types').UnaryExpression} */ (
+      parents[parents.length - 2]
+    )
+  const isTypeof =
+    parentExpression.type === 'UnaryExpression' ||
+    parentExpression.operator === 'typeof'
   return isTypeof
 }
 
-function getTailmostMatchingChain (items, matcher) {
-  const onlyMatched = items.map(item => matcher(item) ? item : null)
+/**
+ * @template {any} T
+ * @param {T[]} items
+ * @param {(item: T) => item is T} matcher
+ * @returns {T[]}
+ */
+function getTailmostMatchingChain(items, matcher) {
+  const onlyMatched = items.map((item) => (matcher(item) ? item : null))
   const lastIndex = onlyMatched.lastIndexOf(null)
-  if (lastIndex === -1) return onlyMatched.slice()
-  return onlyMatched.slice(lastIndex + 1)
+  return /** @type {T[]} */ (
+    lastIndex === -1 ? onlyMatched.slice() : onlyMatched.slice(lastIndex + 1)
+  )
 }
 
-// if array contains 'x' and 'x.y' just keep 'x'
-function reduceToTopmostApiCalls (globalsConfig) {
+/**
+ * If array contains 'x' and 'x.y' just keep 'x'
+ *
+ * @param {Map<string, import('lavamoat-core').GlobalPolicyValue>} globalsConfig
+ * @returns
+ */
+function reduceToTopmostApiCalls(globalsConfig) {
   const allPaths = Array.from(globalsConfig.keys()).sort()
   return allPaths.forEach((path) => {
     const parts = path.split('.')
@@ -73,9 +145,13 @@ function reduceToTopmostApiCalls (globalsConfig) {
     }
     // 'x.y.z' has parents 'x' and 'x.y'
     const parentParts = parts.slice(0, -1)
-    const parents = parentParts.map((_, index) => parentParts.slice(0, index + 1).join('.'))
+    const parents = parentParts.map((_, index) =>
+      parentParts.slice(0, index + 1).join('.')
+    )
     // dont include this if a parent appears in the array
-    const parentsAlreadyInArray = parents.some(parent => allPaths.includes(parent))
+    const parentsAlreadyInArray = parents.some((parent) =>
+      allPaths.includes(parent)
+    )
     if (parentsAlreadyInArray) {
       globalsConfig.delete(path)
     }
@@ -83,8 +159,13 @@ function reduceToTopmostApiCalls (globalsConfig) {
   })
 }
 
-// if array contains 'x' and 'x.y' just keep 'x'
-function reduceToTopmostApiCallsFromStrings (keyPathStrings) {
+/**
+ * If array contains 'x' and 'x.y' just keep 'x'
+ *
+ * @param {string[]} keyPathStrings
+ * @returns {string[]}
+ */
+function reduceToTopmostApiCallsFromStrings(keyPathStrings) {
   // because we sort first, we never have to back track
   const allPaths = keyPathStrings.sort()
   return allPaths.filter((path) => {
@@ -95,9 +176,13 @@ function reduceToTopmostApiCallsFromStrings (keyPathStrings) {
     }
     // 'x.y.z' has parents 'x' and 'x.y'
     const parentParts = parts.slice(0, -1)
-    const parents = parentParts.map((_, index) => parentParts.slice(0, index + 1).join('.'))
+    const parents = parentParts.map((_, index) =>
+      parentParts.slice(0, index + 1).join('.')
+    )
     // dont include this if a parent appears in the array
-    const parentsAlreadyInArray = parents.some(parent => allPaths.includes(parent))
+    const parentsAlreadyInArray = parents.some((parent) =>
+      allPaths.includes(parent)
+    )
     if (parentsAlreadyInArray) {
       return false
     }
@@ -106,13 +191,28 @@ function reduceToTopmostApiCallsFromStrings (keyPathStrings) {
   })
 }
 
-function addGlobalUsage (globalsConfig, identifierPath, identifierUse) {
-  // add variable to results, if not already set
-  if (globalsConfig.has(identifierPath) && identifierUse !== 'write') return
+/**
+ * Add variable to results, if not already set
+ *
+ * @param {Map<string, import('lavamoat-core').GlobalPolicyValue>} globalsConfig
+ * @param {string} identifierPath
+ * @param {import('lavamoat-core').GlobalPolicyValue} identifierUse
+ */
+function addGlobalUsage(globalsConfig, identifierPath, identifierUse) {
+  if (globalsConfig.has(identifierPath) && identifierUse !== 'write') {
+    return
+  }
   globalsConfig.set(identifierPath, identifierUse)
 }
 
-function mergePolicy (configA, configB) {
+/**
+ * Merge two global policy configs (as `Map`s) together
+ *
+ * @param {Map<string, import('lavamoat-core').GlobalPolicyValue>} configA
+ * @param {Map<string, import('lavamoat-core').GlobalPolicyValue>} configB
+ * @returns
+ */
+function mergePolicy(configA, configB) {
   const newConfig = new Map(configA)
   Array.from(configB.entries()).forEach(([path, value]) => {
     addGlobalUsage(newConfig, path, value)
@@ -121,24 +221,59 @@ function mergePolicy (configA, configB) {
   return newConfig
 }
 
-function objToMap (obj) {
-  return new Map(Object.entries(obj))
+/**
+ * @template {object} T
+ * @param {T} obj
+ * @returns {Map<keyof T, T[keyof T]>}
+ */
+function objToMap(obj) {
+  return /** @type {Map<keyof T, T[keyof T]>} */ (new Map(Object.entries(obj)))
 }
 
-// Object.fromEntries not available in node v10
-function mapToObj (map) {
-  const obj = {}
-  map.forEach((value, key) => { obj[key] = value })
-  return obj
+/**
+ * @template V
+ * @param {Map<PropertyKey, V>} map
+ * @returns {{ [k: string]: V }} If array contains 'x' and 'x.y' just keep 'x'
+ */
+function mapToObj(map) {
+  return Object.fromEntries(map)
 }
 
-function getParents (nodePath) {
+/**
+ * Returns an array of a `NodePath`'s parent nodes (to the root)
+ *
+ * @param {import('@babel/traverse').NodePath<any> | null} nodePath
+ * @returns {import('@babel/types').Node[]}
+ */
+function getParents(nodePath) {
+  /** @type {import('@babel/types').Node[]} */
   const parents = []
   let target = nodePath
   while (target) {
     parents.push(target.node)
-    target = target.parentPath
+    target = /** @type {import('@babel/traverse').NodePath<any>} */ (
+      target.parentPath
+    )
   }
   parents.reverse()
   return parents
+}
+
+/**
+ * Determines if this `Node` is a descendant of a `FunctionDeclaration` or
+ * `FunctionExpression`.
+ *
+ * @param {import('@babel/traverse').NodePath<any>} nodePath
+ * @returns {boolean}
+ */
+function isInFunctionDeclaration(nodePath) {
+  let target = nodePath.parentPath
+  while (target) {
+    // if function declaration found, short-circuit instead of continuing
+    if (target.isFunctionDeclaration() || target.isFunctionExpression()) {
+      return true
+    }
+    target = target.parentPath
+  }
+  return false
 }

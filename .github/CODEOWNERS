@@ -1,0 +1,9 @@
+# adds everybody as a reviewer on all the PRs
+* @LavaMoat/devs
+
+*eslint*                @boneskull
+*release-please*        @boneskull
+.config/README.md       @boneskull
+.husky/**/*             @boneskull
+renovate*               @boneskull
+tsconfig*.json          @boneskull

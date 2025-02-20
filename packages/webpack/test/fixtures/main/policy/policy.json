@@ -1,0 +1,31 @@
+{
+  "resources": {
+    "commonjs-package": {
+      "packages": {
+        "umd-package": true
+      }
+    },
+    "es6-module-package": {
+      "packages": {
+        "umd-package": true
+      }
+    },
+    "globals-package": {
+      "globals": {
+        "console": true,
+        "self": true
+      }
+    },
+    "resource-hack": {
+      "globals": {
+        "URL": true,
+        "console.log": true
+      }
+    },
+    "umd-package": {
+      "globals": {
+        "define": true
+      }
+    }
+  }
+}
