@@ -1,23 +1,207 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main # limit to main, because pushes to pull-requested branches are triggered below
+  pull_request:
+    # any pull request
+
+permissions:
+  contents: read
+
+env:
+  FORCE_COLOR: '1'
 
 jobs:
   test:
     name: test
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        node-version: [12.x, 14.x, 15.x]
+        include:
+          - node-version: 16.x
+            test-workspaces: >-
+              --workspace=packages/aa
+              --workspace=packages/allow-scripts
+              --workspace=packages/preinstall-always-fail
+              --workspace=packages/yarn-plugin-allow-scripts
+          - node-version: 18.x
+            test-workspaces: >-
+              --workspace=packages/aa
+              --workspace=packages/allow-scripts
+              --workspace=packages/browserify
+              --workspace=packages/core
+              --workspace=packages/lavapack
+              --workspace=packages/laverna
+              --workspace=packages/lavamoat-node
+              --workspace=packages/perf
+              --workspace=packages/preinstall-always-fail
+              --workspace=packages/survey
+              --workspace=packages/tofu
+              --workspace=packages/webpack
+              --workspace=packages/yarn-plugin-allow-scripts
+          - node-version: 20.x
+            test-workspaces: >-
+              --workspace=packages/aa
+              --workspace=packages/allow-scripts
+              --workspace=packages/browserify
+              --workspace=packages/core
+              --workspace=packages/lavapack
+              --workspace=packages/laverna
+              --workspace=packages/lavamoat-node
+              --workspace=packages/perf
+              --workspace=packages/preinstall-always-fail
+              --workspace=packages/survey
+              --workspace=packages/tofu
+              --workspace=packages/webpack
+              --workspace=packages/yarn-plugin-allow-scripts
+          - node-version: 22.x
+            test-workspaces: >-
+              --workspace=packages/aa
+              --workspace=packages/allow-scripts
+              --workspace=packages/browserify
+              --workspace=packages/core
+              --workspace=packages/lavapack
+              --workspace=packages/laverna
+              --workspace=packages/lavamoat-node
+              --workspace=packages/perf
+              --workspace=packages/preinstall-always-fail
+              --workspace=packages/survey
+              --workspace=packages/tofu
+              --workspace=packages/webpack
+              --workspace=packages/yarn-plugin-allow-scripts
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+      - name: Checkout (PR)
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      # fetch-depth: 0 looks like it has a perf impact, so let's not do that if we don't have to.
+      # see https://github.com/actions/checkout/blob/main/README.md#usage
+      - name: Checkout (Push)
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0 # needed for dirty check
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4
         with:
           node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      - name: Set npm version
+        run: |
+          corepack enable
+          npm --version
       - name: Install Dependencies
-        run: yarn --frozen-lockfile --ignore-scripts
+        uses: bahmutov/npm-install@7639f1c46981fc8c8d64ec6be729b7ddbd7ddc52 # v1.10.7
+        with:
+          useRollingCache: true
+          install-command: npm ci --foreground-scripts
       - name: Test
-        run: yarn test
-      - name: Lint
-        run: yarn lint
+        run: |
+          npm run --if-present ${{ matrix.test-workspaces }} build
+          npm run build:types
+          npm run --if-present ${{ matrix.test-workspaces }} test:prep
+          npm run --if-present ${{ matrix.test-workspaces }} test
+      - name: Dirty Check
+        run: node ./scripts/dirty-check.js
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Install Dependencies
+        uses: bahmutov/npm-install@7639f1c46981fc8c8d64ec6be729b7ddbd7ddc52 # v1.10.7
+        with:
+          useRollingCache: true
+          install-command: npm ci --foreground-scripts
+      # the same thing could be accomplished via `npm lint` but this is helpful for organizing job output
+      - name: Lint Sources
+        run: npm run lint:eslint
+      - name: Lint Dependencies
+        run: npm run lint:deps
+      - name: Lint Lockfile
+        run: npm run lint:lockfile
+
+  compatibility-test-windows:
+    name: Test Windows compatibility
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+    env:
+      FORCE_COLOR: 1
+      TEST_WORKSPACES: >-
+        --workspace=packages/aa
+        --workspace=packages/allow-scripts
+        --workspace=packages/core
+        --workspace=packages/lavapack
+        --workspace=packages/preinstall-always-fail
+        --workspace=packages/tofu
+        --workspace=packages/yarn-plugin-allow-scripts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Set npm version
+        run: |
+          corepack enable
+          npm --version
+      - name: Install Dependencies
+        uses: bahmutov/npm-install@7639f1c46981fc8c8d64ec6be729b7ddbd7ddc52 # v1.10.7
+        with:
+          useRollingCache: true
+          install-command: npm ci --foreground-scripts
+      - name: Test
+        run: |
+          npm run --if-present ${{ env.TEST_WORKSPACES }} build
+          npm run build:types
+          npm run --if-present ${{ env.TEST_WORKSPACES }} test:prep
+          npm run --if-present ${{ env.TEST_WORKSPACES }} test
+
+  compatibility-test-macos:
+    name: Test macOS compatibility
+    runs-on: macOS-latest
+    env:
+      FORCE_COLOR: 1
+      TEST_WORKSPACES: >-
+        --workspace=packages/aa
+        --workspace=packages/allow-scripts
+        --workspace=packages/browserify
+        --workspace=packages/core
+        --workspace=packages/lavapack
+        --workspace=packages/laverna
+        --workspace=packages/lavamoat-node
+        --workspace=packages/perf
+        --workspace=packages/preinstall-always-fail
+        --workspace=packages/survey
+        --workspace=packages/tofu
+        --workspace=packages/webpack
+        --workspace=packages/yarn-plugin-allow-scripts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Set npm version
+        run: |
+          corepack enable
+          npm --version
+      - name: Install Dependencies
+        uses: bahmutov/npm-install@7639f1c46981fc8c8d64ec6be729b7ddbd7ddc52 # v1.10.7
+        with:
+          useRollingCache: true
+          install-command: npm ci --foreground-scripts
+      - name: Test
+        run: |
+          npm run --if-present ${{ env.TEST_WORKSPACES }} build
+          npm run build:types
+          npm run --if-present ${{ env.TEST_WORKSPACES }} test:prep
+          npm run --if-present ${{ env.TEST_WORKSPACES }} test

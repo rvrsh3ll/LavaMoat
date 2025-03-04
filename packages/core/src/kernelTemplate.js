@@ -10,23 +10,45 @@
     getExternalCompartment,
     globalThisRefs,
     runWithPrecompiledModules,
+    reportStatsHook,
   }) {
-    const debugMode = __lavamoatDebugMode__
+    // debug options are hard-coded at build time
+    const {
+      debugMode,
+    } = __lavamoatDebugOptions__
+    // security options are hard-coded at build time
+    const {
+      scuttleGlobalThis,
+    } = __lavamoatSecurityOptions__
 
-    // identify the globalRef
-    const globalRef = (typeof globalThis !== 'undefined') ? globalThis : (typeof self !== 'undefined') ? self : (typeof global !== 'undefined') ? global : undefined
+    function getGlobalRef () {
+      if (typeof globalThis !== 'undefined') {
+        return globalThis
+      }
+      const globalRef = typeof self !== 'undefined' ? self : (typeof global !== 'undefined' ? global : undefined)
+      if (typeof globalRef !== 'undefined') {
+        console.error('LavaMoat - Deprecation Warning: global reference is expected as `globalThis`')
+      }
+    }
+
+    const globalRef = getGlobalRef()
+
     if (!globalRef) {
-      throw new Error('Lavamoat - unable to identify globalRef')
+      throw new Error('Lavamoat - globalThis not defined')
     }
 
     // polyfill globalThis
-    if (globalRef && !globalRef.globalThis) {
+    if (globalRef.globalThis !== globalRef) {
       globalRef.globalThis = globalRef
+    }
+    if (globalRef.global !== globalRef) {
+      globalRef.global = globalRef
     }
 
     // create the SES rootRealm
     // "templateRequire" calls are inlined in "generateKernel"
     // load-bearing semi-colon, do not remove
+    // eslint-disable-next-line no-extra-semi
     ;templateRequire('ses')
 
     const lockdownOptions = {
@@ -38,8 +60,11 @@
       errorTaming: 'unsafe',
       // shows the full call stack
       stackFiltering: 'verbose',
-      // deep stacks
-      consoleTaming: 'unsafe',
+      // prevents most common override mistake cases from tripping up users
+      overrideTaming: 'severe',
+      // preserves JS locale methods, to avoid confusing users
+      // prevents aliasing: toLocaleString() to toString(), etc
+      localeTaming: 'unsafe',
     }
 
     lockdown(lockdownOptions)
@@ -54,8 +79,10 @@
       getExternalCompartment,
       globalRef,
       globalThisRefs,
+      scuttleGlobalThis,
       debugMode,
-      runWithPrecompiledModules
+      runWithPrecompiledModules,
+      reportStatsHook,
     })
     return kernel
   }

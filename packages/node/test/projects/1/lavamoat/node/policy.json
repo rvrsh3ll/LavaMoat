@@ -1,9 +1,0 @@
-{
-  "resources": {
-    "a": {
-      "packages": {
-        "<root>": true
-      }
-    }
-  }
-}

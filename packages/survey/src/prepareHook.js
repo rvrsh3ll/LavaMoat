@@ -4,16 +4,19 @@
 // environment PATH.
 // this has been borrowed and modified from https://github.com/agoric/ses-shim
 
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs')
+const path = require('node:path')
 
-const node = process.env.NVM_BIN ? `${process.env.NVM_BIN}/node` : process.argv[0];
+const node = process.env.NVM_BIN
+  ? `${process.env.NVM_BIN}/node`
+  : process.argv[0]
 const npxPath = path.resolve(node, '../npx')
 const lavamoat = require.resolve('lavamoat/src/index.js')
-const lockdown = new URL('../src/lockdown.cjs', `file://${__filename}`).pathname;
-const mitm = new URL('../mitm/node', `file://${__filename}`).pathname;
+// eslint-disable-next-line no-unused-vars
+const lockdown = new URL('../src/lockdown.cjs', `file://${__filename}`).pathname
+const mitm = new URL('../mitm/node', `file://${__filename}`).pathname
 
-const script = `#!/bin/bash
+const script = `#!/bin/sh
 set -xueo pipefail
 
 npxpath="${npxPath}"
@@ -29,7 +32,7 @@ else
   echo "unknown, running with lavamoat"
   ${node} ${lavamoat} --writeAutoConfigAndRun "$@"
 fi
-`;
+`
 
 /*
   /home/xyz/.nvm/versions/node/v12.16.1/bin/node \
@@ -38,5 +41,5 @@ fi
   /home/xyz/.yarn/bin/yarn.js 'run test'
 */
 
-fs.writeFileSync(mitm, script, 'utf-8');
-fs.chmodSync(mitm, 0o755);
+fs.writeFileSync(mitm, script, 'utf-8')
+fs.chmodSync(mitm, 0o755)
