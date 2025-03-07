@@ -1,0 +1,28 @@
+{
+  "name": "@lavamoat/yarn-plugin-allow-scripts",
+  "version": "1.0.0",
+  "description": "A Yarn plugin for running `@lavamoat/allow-scripts` after install",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LavaMoat/LavaMoat.git",
+    "directory": "packages/yarn-plugin-allow-scripts"
+  },
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": "^16.20.0 || ^18.0.0 || ^20.0.0 || ^22.0.0",
+    "yarn": "^3.1.1"
+  },
+  "main": "./sources/index.ts",
+  "scripts": {
+    "build": "builder build plugin",
+    "rebuild": "npm run build",
+    "test": "exit 0"
+  },
+  "dependencies": {
+    "@yarnpkg/builder": "3.3.1",
+    "@yarnpkg/cli": "3.8.7",
+    "@yarnpkg/core": "3.7.0",
+    "clipanion": "3.2.1"
+  }
+}

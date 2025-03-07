@@ -9,21 +9,23 @@
 // - cleanup: var -> const/let
 // - cleanup/refactor
 
-const fs = require('fs')
-const assert = require('assert')
+const fs = require('node:fs')
+const path = require('node:path')
+const assert = require('node:assert')
 const JSONStream = require('JSONStream')
 const through = require('through2')
 const umd = require('umd')
-const { Buffer } = require('buffer')
-const path = require('path')
+// eslint-disable-next-line n/prefer-global/buffer
+const { Buffer } = require('node:buffer')
 const combineSourceMap = require('combine-source-map')
-const convertSourceMap = require('convert-source-map')
 const jsonStringify = require('json-stable-stringify')
 
 const defaultPreludePath = path.join(__dirname, '_prelude.js')
 
-function newlinesIn (src) {
-  if (!src) return 0
+function newlinesIn(src) {
+  if (!src) {
+    return 0
+  }
   const newlines = src.match(/\n/g)
   return newlines ? newlines.length : 0
 }
@@ -32,7 +34,7 @@ module.exports = createPacker
 
 function createPacker({
   // hook for applying sourcemaps
-  sourcePathForModule = row => row.sourceFile,
+  sourcePathForModule = (row) => row.sourceFile,
   // input is (true:) objects (false:) json strings
   raw = false,
   standalone = false,
@@ -50,16 +52,25 @@ function createPacker({
   policy = {},
   // prune policy to only include packages used in the bundle
   prunePolicy = false,
+  // XXX: what is this?
+  // eslint-disable-next-line no-unused-vars
   externalRequireName,
   sourceRoot,
   sourceMapPrefix,
   bundleWithPrecompiledModules = true,
+  scuttleGlobalThis = {},
+  scuttleGlobalThisExceptions,
 } = {}) {
   // stream/parser wrapping incase raw: false
   const parser = raw ? through.obj() : JSONStream.parse([true])
   const stream = through.obj(
-    function (buf, _, next) { parser.write(buf); next() },
-    function () { parser.end() }
+    function (buf, _, next) {
+      parser.write(buf)
+      next()
+    },
+    function () {
+      parser.end()
+    }
   )
 
   // these are decorated for some reason
@@ -73,9 +84,38 @@ function createPacker({
   let sourcemap
 
   if (includePrelude) {
-    assert(prelude, 'LavaMoat CustomPack: must specify a prelude if "includePrelude" is true (default: true)')
+    assert(
+      prelude,
+      'LavaMoat CustomPack: must specify a prelude if "includePrelude" is true (default: true)'
+    )
   }
   assert(policy, 'must specify a policy')
+
+  if (scuttleGlobalThisExceptions) {
+    console.warn(
+      'Lavamoat - "scuttleGlobalThisExceptions" is deprecated. Use "scuttleGlobalThis.exceptions" instead.'
+    )
+    if (scuttleGlobalThis === true) {
+      scuttleGlobalThis = { enabled: true }
+    }
+  }
+  const exceptions =
+    scuttleGlobalThis?.exceptions || scuttleGlobalThisExceptions
+  scuttleGlobalThis.exceptions = exceptions
+
+  // toString regexps if there's any
+  if (exceptions) {
+    for (let i = 0; i < exceptions.length; i++) {
+      exceptions[i] = String(exceptions[i])
+    }
+  }
+
+  prelude = prelude.replace(
+    '__lavamoatSecurityOptions__',
+    JSON.stringify({
+      scuttleGlobalThis,
+    })
+  )
 
   // note: pack stream cant started emitting data until its received its first module
   // this is because the browserify pipeline is leaky until its finished being setup
@@ -83,8 +123,7 @@ function createPacker({
 
   return stream
 
-
-  function onModule (moduleData, _, next) {
+  function onModule(moduleData, _, next) {
     if (first && standalone) {
       const pre = umd.prelude(standalone).trim()
       stream.push(Buffer.from(pre + 'return ', 'utf8'))
@@ -108,7 +147,7 @@ function createPacker({
       }
     }
 
-    const moduleEntryPrefix = (first ? '' : ',\n')
+    const moduleEntryPrefix = first ? '' : ',\n'
     lineno += newlinesIn(moduleEntryPrefix)
     stream.push(Buffer.from(moduleEntryPrefix, 'utf8'))
 
@@ -117,7 +156,11 @@ function createPacker({
       packages.add(packageName)
     }
 
-    const sourceMeta = prepareModuleInitializer(moduleData, sourcePathForModule, bundleWithPrecompiledModules)
+    const sourceMeta = prepareModuleInitializer(
+      moduleData,
+      sourcePathForModule,
+      bundleWithPrecompiledModules
+    )
     const wrappedSource = serializeModule(moduleData, sourceMeta)
 
     if (moduleData.sourceFile && !moduleData.nomap) {
@@ -140,9 +183,13 @@ function createPacker({
     next()
   }
 
-  function onDone () {
-    if (first) stream.push(generateBundleLoaderInitial())
-    entryFiles = entryFiles.filter(function (x) { return x !== undefined })
+  function onDone() {
+    if (first) {
+      stream.push(generateBundleLoaderInitial())
+    }
+    entryFiles = entryFiles.filter(function (x) {
+      return x !== undefined
+    })
 
     // filter the policy removing packages that arent included
     let minimalPolicy = { resources: {} }
@@ -158,23 +205,30 @@ function createPacker({
 
     // close the loadBundle request
     stream.push(
-      Buffer.from(`],${JSON.stringify(entryFiles)},${JSON.stringify(minimalPolicy)})`, 'utf8')
+      Buffer.from(
+        `],${JSON.stringify(entryFiles)},${JSON.stringify(minimalPolicy)})`,
+        'utf8'
+      )
     )
 
     if (standalone && !first) {
-      stream.push(Buffer.from(
-        '(' + JSON.stringify(stream.standaloneModule) + ')' +
-                    umd.postlude(standalone),
-        'utf8'
-      ))
+      stream.push(
+        Buffer.from(
+          '(' +
+            JSON.stringify(stream.standaloneModule) +
+            ')' +
+            umd.postlude(standalone),
+          'utf8'
+        )
+      )
     }
 
     if (sourcemap) {
       let comment = sourcemap.comment()
       if (sourceMapPrefix) {
-        comment = comment.replace(
-          /^\/\/#/, function () { return sourceMapPrefix }
-        )
+        comment = comment.replace(/^\/\/#/, function () {
+          return sourceMapPrefix
+        })
       }
       stream.push(Buffer.from('\n' + comment + '\n', 'utf8'))
     }
@@ -185,7 +239,7 @@ function createPacker({
     stream.push(null)
   }
 
-  function generateBundleLoaderInitial () {
+  function generateBundleLoaderInitial() {
     let output = ''
     // append prelude if requested
     if (includePrelude) {
@@ -196,24 +250,28 @@ function createPacker({
     return Buffer.from(output, 'utf8')
   }
 
-  function serializeModule (moduleData, sourceMeta) {
-    const { id, packageName, packageVersion, source, deps, file } = moduleData
+  function serializeModule(moduleData, sourceMeta) {
+    const { id, packageName, deps, file } = moduleData
+    const relativeFilePath = file && path.relative(basedir, file)
     // for now, ignore new sourcemap and just append original filename
     // serialize final module entry
     const jsonSerializeableData = {
       // id,
       package: packageName,
-      packageVersion,
-      file,
+      file: relativeFilePath,
       // deps,
       // source: sourceMeta.code
     }
     const moduleInitializer = sourceMeta.code
-    let serializedEntry = `[${jsonStringify(id)}, ${jsonStringify(deps)}, ${moduleInitializer}, {`
+    let serializedEntry = `[${jsonStringify(id)}, ${jsonStringify(
+      deps
+    )}, ${moduleInitializer}, {`
     // add metadata
     Object.entries(jsonSerializeableData).forEach(([key, value]) => {
       // skip missing values
-      if (value === undefined) return
+      if (value === undefined) {
+        return
+      }
       serializedEntry += `${key}:${jsonStringify(value)},`
     })
     serializedEntry += '}]'
@@ -222,33 +280,55 @@ function createPacker({
   }
 }
 
-function prepareModuleInitializer (moduleData, sourcePathForModule, bundleWithPrecompiledModules) {
+function prepareModuleInitializer(
+  moduleData,
+  sourcePathForModule,
+  bundleWithPrecompiledModules
+) {
   const normalizedSource = moduleData.source.split('\r\n').join('\n')
   // extract sourcemaps
-  const sourceMeta = extractSourceMaps(normalizedSource)
+  const sourceMeta = removeSourceMaps(normalizedSource)
   // create wrapper + update sourcemaps
-  const newSourceMeta = wrapInModuleInitializer(moduleData, sourceMeta, sourcePathForModule, bundleWithPrecompiledModules)
+  const newSourceMeta = wrapInModuleInitializer(
+    moduleData,
+    sourceMeta,
+    sourcePathForModule,
+    bundleWithPrecompiledModules
+  )
   return newSourceMeta
 }
 
-function extractSourceMaps (sourceCode) {
-  const converter = convertSourceMap.fromSource(sourceCode)
-  // if (!converter) throw new Error('Unable to find original inlined sourcemap')
-  const maps = converter && converter.toObject()
-  const code = convertSourceMap.removeComments(sourceCode)
-  return { code, maps }
+const sourceMapDropper =
+  /^\s*?(?:\/\/[@#]\s+?sourceMappingURL=.*$|\/\*[@#]\s+?sourceMappingURL=[\s\S]*?\*\/)/gm
+module.exports.sourceMapDropperRegex = sourceMapDropper
+
+function removeSourceMaps(sourceCode) {
+  const code = sourceCode.replace(sourceMapDropper, '')
+  return { code }
 }
 
-function wrapInModuleInitializer (moduleData, sourceMeta, sourcePathForModule, bundleWithPrecompiledModules) {
-  const filename = String(moduleData.file)
-  if (filename.includes('\n')) {
-    throw new Error('LavaMoat - encountered a filename containing a newline')
+function assertValidJS(code) {
+  try {
+    new Function(code)
+  } catch (err) {
+    throw new Error(`Invalid JavaScript: ${err.message}`)
   }
+}
+
+function wrapInModuleInitializer(
+  moduleData,
+  sourceMeta,
+  sourcePathForModule,
+  bundleWithPrecompiledModules
+) {
+  // additional layer of syntax checking independent of browserify
+  assertValidJS(sourceMeta.code)
+  const filename = encodeURI(String(moduleData.file))
   let moduleWrapperSource
   if (bundleWithPrecompiledModules) {
-    moduleWrapperSource = (
-`function(){
-  with (this) {
+    moduleWrapperSource = `function(){
+  with (this.scopeTerminator) {
+  with (this.globalThis) {
     return function() {
       'use strict';
       // source: ${filename}
@@ -257,8 +337,8 @@ __MODULE_CONTENT__
       };
     };
   }
+  }
 }`
-    )
   } else {
     moduleWrapperSource = `// source: ${filename}\nfunction(require, module, exports){\n__MODULE_CONTENT__\n}`
   }

@@ -1,0 +1,14 @@
+{
+  "resources": {
+    "atob": {
+      "globals": {
+        "Buffer.from": true,
+        "console.log": true,
+        "process.argv": true
+      }
+    },
+    "keccak": {
+      "native": true
+    }
+  }
+}

@@ -1,4 +1,4 @@
-const { createScenarioFromScaffold } = require('../util.js')
+const { createScenarioFromScaffold } = require('../util')
 
 module.exports = [
   async () => {
@@ -13,7 +13,7 @@ module.exports = [
         const importString = 'import x from "y"'
         module.exports = { comment, importString }
       },
-      testType: 'truthy'
+      testType: 'truthy',
     })
     return scenario
   },
@@ -27,14 +27,17 @@ module.exports = [
         module.exports = { two }
       },
       defineTwo: () => {
-        function SubError () {}
+        function SubError() {}
         _inheritsLoose(SubError, TypeError)
         /* eslint-disable */
-        function _inheritsLoose (t, e) { t.prototype = Object.create(e.prototype), (t.prototype.constructor = t).__proto__ = e }
+        function _inheritsLoose(t, e) {
+          ;(t.prototype = Object.create(e.prototype)),
+            ((t.prototype.constructor = t).__proto__ = e)
+        }
         module.exports = SubError
         /* eslint-enable */
       },
-      testType: 'truthy'
+      testType: 'truthy',
     })
     return scenario
   },
@@ -44,18 +47,21 @@ module.exports = [
       defineOne: () => {
         /* eslint-disable */
         const SuperClass = require('two')
-        function SubClass () {}
+        function SubClass() {}
         _inheritsLoose(SubClass, SuperClass)
         module.exports = { SubClass }
-        function _inheritsLoose (t, e) { t.prototype = Object.create(e.prototype), (t.prototype.constructor = t).__proto__ = e }
+        function _inheritsLoose(t, e) {
+          ;(t.prototype = Object.create(e.prototype)),
+            ((t.prototype.constructor = t).__proto__ = e)
+        }
         /* eslint-enable */
       },
       defineTwo: () => {
-        function SuperClass () {}
+        function SuperClass() {}
         module.exports = SuperClass
       },
-      testType: 'truthy'
+      testType: 'truthy',
     })
     return scenario
-  }
+  },
 ]

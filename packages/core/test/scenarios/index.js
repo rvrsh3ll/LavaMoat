@@ -8,8 +8,9 @@ const globalWrites = require('./globalWrites')
 const moduleExports = require('./moduleExports')
 const transforms = require('./transforms')
 const globalRef = require('./globalRef')
+const scuttle = require('./scuttle')
 
-module.exports = { loadScenarios }
+/** @type {import('./scenario').ScenarioFactory[]} */
 const scenarios = [
   ...autogen,
   ...security,
@@ -21,10 +22,13 @@ const scenarios = [
   ...moduleExports,
   ...transforms,
   ...globalRef,
+  ...scuttle,
 ]
 
-async function * loadScenarios () {
+async function* loadScenarios() {
   for (const scenarioCreator of scenarios) {
     yield await scenarioCreator()
   }
 }
+
+module.exports = { loadScenarios }
