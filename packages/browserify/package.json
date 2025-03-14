@@ -1,63 +1,59 @@
 {
   "name": "lavamoat-browserify",
-  "version": "14.1.0",
+  "version": "18.1.5",
   "description": "browserify plugin for sandboxing dependencies with LavaMoat",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LavaMoat/lavamoat.git",
+    "directory": "packages/browserify"
+  },
+  "homepage": "https://github.com/LavaMoat/lavamoat#readme",
+  "bugs": {
+    "url": "https://github.com/LavaMoat/lavamoat/issues"
+  },
+  "author": "kumavis",
+  "license": "MIT",
+  "engines": {
+    "node": "^18.0.0 || ^20.0.0 <20.15.0 || ^20.17.0 || ^22.5.1"
+  },
   "main": "src/index.js",
   "directories": {
     "lib": "lib",
     "test": "test"
   },
-  "engines": {
-    "node": ">10.15.1"
+  "scripts": {
+    "build:ses": "(cd ./node_modules/ses && npm install && npm run build && cp ./dist/ses.umd.js ../../lib/)",
+    "lint:deps": "depcheck",
+    "test": "npm run test:prep && npm run test:ava",
+    "test:ava": "ava",
+    "test:prep": "cross-env WRITE_AUTO_POLICY=1 node ./test/fixtures/secureBundling/run.js && cross-env WRITE_AUTO_POLICY=1 node ./test/fixtures/secureBundling/build.js >/dev/null"
   },
   "dependencies": {
-    "@lavamoat/lavapack": "^2.0.3",
-    "JSONStream": "^1.3.5",
-    "clone": "^2.1.2",
-    "concat-stream": "^2.0.0",
-    "convert-source-map": "^1.8.0",
-    "duplexify": "^4.1.1",
-    "json-stable-stringify": "^1.0.1",
-    "lavamoat-core": "^11.0.0",
-    "merge-deep": "^3.0.2",
-    "offset-sourcemap-lines": "^1.0.1",
-    "pify": "^4.0.1",
-    "readable-stream": "^3.6.0",
-    "safe-buffer": "^5.1.2",
-    "through2": "^3.0.0",
-    "umd": "^3.0.3"
+    "@lavamoat/aa": "^4.3.2",
+    "@lavamoat/lavapack": "^7.0.8",
+    "@lavamoat/sourcemap-validator": "2.1.1",
+    "browser-resolve": "2.0.0",
+    "concat-stream": "2.0.0",
+    "convert-source-map": "2.0.0",
+    "duplexify": "4.1.3",
+    "lavamoat-core": "^16.3.2",
+    "pify": "5.0.0",
+    "readable-stream": "4.5.2",
+    "source-map": "0.7.4",
+    "through2": "4.0.2"
   },
   "devDependencies": {
-    "bify-package-factor": "^1.0.7",
-    "browserify": "^16.2.3",
-    "eslint-plugin-ava": "^11.0.0",
-    "eslint-plugin-standard": "^5.0.0",
-    "from": "^0.1.7",
-    "keccak": "^3.0.1",
-    "pump": "^3.0.0",
-    "source-map-explorer": "^2.5.2",
-    "sourcemap-validator": "^2.1.0",
-    "vinyl-buffer": "^1.0.1",
-    "watchify": "^3.11.1"
+    "@babel/code-frame": "7.26.2",
+    "browserify": "17.0.1",
+    "keccak": "3.0.4",
+    "lavamoat": "9.0.8",
+    "source-map-explorer": "2.5.3",
+    "tmp-promise": "3.0.3",
+    "watchify": "4.0.0"
   },
-  "scripts": {
-    "test": "ava test/index.js --timeout=2m",
-    "test:prep": "(cd './test/fixtures/secureBundling' && lavamoat build.js --writeAutoPolicy)",
-    "lint": "npm run lint:eslint && npm run lint:deps",
-    "lint:eslint": "eslint \"src/**/*.js\" \"test/**/*.js\"",
-    "lint:fix": "eslint src/**/*.js test/**/*.js --fix",
-    "lint:deps": "depcheck",
-    "build:ses": "(cd ./node_modules/ses && npm i && npm run build && cp ./dist/ses.umd.js ../../lib/)"
-  },
-  "author": "kumavis",
-  "license": "MIT",
-  "repository": "git+https://github.com/LavaMoat/lavamoat.git",
-  "bugs": {
-    "url": "https://github.com/LavaMoat/lavamoat/issues"
-  },
-  "homepage": "https://github.com/LavaMoat/lavamoat#readme",
-  "eslintIgnore": [
-    "/src/sourcemaps.js",
-    "/test/fixtures"
-  ]
+  "lavamoat": {
+    "allowScripts": {
+      "keccak": false
+    }
+  }
 }

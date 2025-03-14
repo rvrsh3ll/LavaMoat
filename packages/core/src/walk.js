@@ -1,35 +1,88 @@
+// @ts-check
+
 // specifier = exact unique module name
 // requestedName = what a module asks to import
 
-module.exports = { walk }
+module.exports = { walk, eachNodeInTree }
 
-async function walk ({
+/**
+ * @callback VisitorFn
+ * @param {import('./moduleRecord').LavamoatModuleRecord} moduleRecord
+ * @returns {void}
+ */
+
+/**
+ * @param {object} options
+ * @param {string} options.moduleSpecifier
+ * @param {import('./parseForPolicy').ImportHookFn} options.importHook
+ * @param {VisitorFn} options.visitorFn
+ * @param {import('./parseForPolicy').ShouldImportFn} options.shouldImport
+ * @param {Set<string>} [options.visitedSpecifiers]
+ */
+async function walk({
   moduleSpecifier,
   importHook,
   visitorFn,
+  shouldImport,
+  visitedSpecifiers,
+}) {
+  for await (const moduleRecord of eachNodeInTree({
+    moduleSpecifier,
+    importHook,
+    shouldImport,
+    visitedSpecifiers,
+  })) {
+    // walk next record
+    visitorFn(moduleRecord)
+  }
+}
+
+/**
+ * @param {object} options
+ * @param {string} options.moduleSpecifier
+ * @param {import('./parseForPolicy').ImportHookFn} options.importHook
+ * @param {import('./parseForPolicy').ShouldImportFn} [options.shouldImport]
+ * @param {Set<string>} [options.visitedSpecifiers]
+ * @returns {AsyncIterableIterator<
+ *   import('./moduleRecord').LavamoatModuleRecord
+ * >}
+ */
+// NOTE: i think this is depth first in a way that doesnt take advantage of concurrency
+async function* eachNodeInTree({
+  moduleSpecifier,
+  importHook,
   shouldImport = () => true,
-  visitedSpecifiers = new Set()
+  visitedSpecifiers = new Set(),
 }) {
   // walk next record
   const moduleRecord = await importHook(moduleSpecifier)
-  visitorFn(moduleRecord)
+  if (moduleRecord === undefined) {
+    return
+  }
+  yield moduleRecord
 
-  // walk children
-  await Promise.all(Object.values(moduleRecord.importMap).map(async (childSpecifier) => {
+  // walk children specified in importMap and policyOverride
+  const importMapChildren = Object.values(moduleRecord.importMap)
+  for (const childSpecifier of importMapChildren) {
     // skip children that are set to null (resolution was skipped)
-    if (childSpecifier === null) return
+    if (childSpecifier === null) {
+      continue
+    }
     // skip modules we're told not to import
-    if (!shouldImport(childSpecifier, moduleSpecifier)) return
+    if (!shouldImport(childSpecifier, moduleSpecifier)) {
+      continue
+    }
     // dont revisit specifiers
-    if (visitedSpecifiers.has(childSpecifier)) return
+    if (visitedSpecifiers.has(childSpecifier)) {
+      continue
+    }
     visitedSpecifiers.add(childSpecifier)
     // continue walking child
-    await walk({
+    yield* eachNodeInTree({
       moduleSpecifier: childSpecifier,
       importHook,
-      visitorFn,
       shouldImport,
-      visitedSpecifiers
+      visitedSpecifiers,
     })
-  }))
+  }
 }

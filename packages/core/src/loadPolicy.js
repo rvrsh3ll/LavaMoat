@@ -1,27 +1,150 @@
-const fs = require('fs')
+// @ts-check
+
+const fs = require('node:fs/promises')
+const { readFileSync } = require('node:fs')
 const { mergePolicy } = require('./mergePolicy')
+const { jsonStringifySortedPolicy } = require('./stringifyPolicy')
 
-module.exports = { loadPolicy }
+module.exports = { loadPolicy, loadPolicyAndApplyOverrides, loadPoliciesSync }
 
-
-async function loadPolicy ({ debugMode, policyPath, policyOverridePath }) {
-  let policy = { resources: {} }
-  // try policy
-  if (fs.existsSync(policyPath)) {
-    if (debugMode) console.warn(`Lavamoat looking for policy at ${policyPath}`)
-    const configSource = fs.readFileSync(policyPath, 'utf8')
-    policy = JSON.parse(configSource)
-  } else {
-    if (debugMode) console.warn('Lavamoat could not find policy')
+/**
+ * Reads a policy file from disk, if present
+ *
+ * @param {PolicyOpts} opts
+ * @returns {import('./schema').LavaMoatPolicy | undefined}
+ */
+function readPolicyFileSync({ debugMode, policyPath }) {
+  if (debugMode) {
+    console.warn(`Lavamoat looking for policy at '${policyPath}'`)
   }
-  // try policy override
-  if (fs.existsSync(policyOverridePath)) {
-    if (debugMode) console.warn(`Lavamoat looking for override policy at ${policyOverridePath}`)
-    const configSource = fs.readFileSync(policyOverridePath, 'utf8')
-    const overrideConfig = JSON.parse(configSource)
-    policy = mergePolicy(policy, overrideConfig)
-  } else {
-    if (debugMode) console.warn('Lavamoat could not find policy override')
+  /** @type string */
+  let rawPolicy
+  try {
+    rawPolicy = readFileSync(policyPath, 'utf8')
+  } catch (err) {
+    if (/** @type {NodeJS.ErrnoException} */ (err).code !== 'ENOENT') {
+      throw err
+    } else if (debugMode) {
+      console.warn(`Lavamoat could not find policy at '${policyPath}'`)
+    }
+    return
+  }
+  try {
+    return JSON.parse(rawPolicy)
+  } catch (/** @type any */ error) {
+    if (debugMode) {
+      console.warn({
+        error: error?.message || error,
+        policyPath,
+        rawPolicy,
+      })
+    }
+    throw new Error(
+      `Lavamoat could not parse policy at '${policyPath}': ${/** @type {NodeJS.ErrnoException} */ (error).message}`
+    )
+  }
+}
+
+/**
+ * Loads a policy from disk, returning a default empty policy if not found.
+ *
+ * @param {PolicyOpts} opts
+ * @returns {Promise<import('./schema').LavaMoatPolicy>}
+ * @todo Because there is no validation taking place, the resulting value could
+ *   be literally anything `JSON.parse()` could return. Also note that this
+ *   returns a `LavaMoatPolicy` when we could be asking for a
+ *   `LavaMoatPolicyOverrides`; make your type assertions accordingly!
+ */
+async function loadPolicy({ debugMode, policyPath }) {
+  /** @type {import('./schema').LavaMoatPolicy} */
+  let policy = { resources: {} }
+  try {
+    const rawPolicy = readPolicyFileSync({ debugMode, policyPath })
+    policy = rawPolicy ?? policy
+  } catch (err) {
+    if (/** @type {NodeJS.ErrnoException} */ (err).code !== 'ENOENT') {
+      throw err
+    } else if (debugMode) {
+      console.warn(`Lavamoat could not find policy at '${policyPath}'`)
+    }
   }
   return policy
 }
+
+/**
+ * Loads policy and policy overrides from disk and merges them.
+ *
+ * If overrides exist, writes the overrides _back_ into the policy file.
+ *
+ * @param {PolicyOpts & { policyOverridePath: string }} opts
+ * @returns {Promise<import('./schema').LavaMoatPolicy>}
+ */
+async function loadPolicyAndApplyOverrides({
+  debugMode,
+  policyPath,
+  policyOverridePath,
+}) {
+  const policy = await loadPolicy({ debugMode, policyPath })
+
+  const policyOverride =
+    /** @type {import('./schema').LavaMoatPolicyOverrides | undefined} */ (
+      readPolicyFileSync({ debugMode, policyPath: policyOverridePath })
+    )
+
+  if (!policyOverride) {
+    return policy
+  }
+
+  if (debugMode) {
+    console.warn('Merging policy-override.json into policy.json')
+  }
+
+  const finalPolicy = mergePolicy(policy, policyOverride)
+
+  // TODO: Only write if merge results in changes.
+  // Would have to make a deep equal check on whole policy, which is a waste of time.
+  // mergePolicy() should be able to do it in one pass.
+  await fs.writeFile(policyPath, jsonStringifySortedPolicy(finalPolicy))
+
+  return finalPolicy
+}
+
+/**
+ * Loads policy and policy overrides from disk and merges them.
+ *
+ * Doesn't write anything back to disk.
+ *
+ * @param {PolicyOpts & { policyOverridePath: string }} opts
+ * @returns {{
+ *   policy: import('./schema').LavaMoatPolicy | undefined
+ *   applyOverride: (
+ *     main: import('./schema').LavaMoatPolicy
+ *   ) => import('./schema').LavaMoatPolicy
+ * }}
+ */
+function loadPoliciesSync({ debugMode, policyPath, policyOverridePath }) {
+  const policy = readPolicyFileSync({ debugMode, policyPath })
+  const policyOverride = readPolicyFileSync({
+    debugMode,
+    policyPath: policyOverridePath,
+  })
+
+  return {
+    policy,
+    applyOverride: (main) => {
+      if (!policyOverride) {
+        return main
+      }
+      if (debugMode) {
+        console.warn('Merging policy-override.json into policy.json')
+      }
+      return mergePolicy(main, policyOverride)
+    },
+  }
+}
+
+/**
+ * @typedef PolicyOpts
+ * @property {boolean} debugMode
+ * @property {string} policyPath
+ */

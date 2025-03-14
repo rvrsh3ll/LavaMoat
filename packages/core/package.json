@@ -1,53 +1,59 @@
 {
   "name": "lavamoat-core",
-  "version": "11.0.1",
+  "version": "16.3.2",
   "description": "LavaMoat kernel and utils",
-  "main": "src/index.js",
-  "directories": {
-    "lib": "lib"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LavaMoat/lavamoat.git",
+    "directory": "packages/core"
   },
-  "engines": {
-    "node": ">10.0.0"
-  },
-  "dependencies": {
-    "fromentries": "^1.2.0",
-    "json-stable-stringify": "^1.0.1",
-    "lavamoat-tofu": "^6.0.0",
-    "merge-deep": "^3.0.2",
-    "resolve": "^1.15.1"
-  },
-  "devDependencies": {
-    "object.fromentries": "^2.0.2",
-    "tmp-promise": "^3.0.2",
-    "ses": "^0.12.3",
-    "eslint-plugin-ava": "^11.0.0",
-    "eslint-plugin-standard": "^5.0.0"
-  },
-  "scripts": {
-    "lint": "npm run lint:eslint && npm run lint:deps",
-    "lint:eslint": "eslint \"src/**/*.js\" \"test/**/*.js\"",
-    "lint:fix": "eslint src/**/*.js test/**/*.js --fix",
-    "lint:deps": "depcheck",
-    "test": "ava test/index.js --timeout=2m"
-  },
-  "author": "kumavis",
-  "license": "MIT",
-  "repository": "git+https://github.com/LavaMoat/lavamoat.git",
+  "homepage": "https://github.com/LavaMoat/lavamoat#readme",
   "bugs": {
     "url": "https://github.com/LavaMoat/lavamoat/issues"
   },
-  "homepage": "https://github.com/LavaMoat/lavamoat#readme",
-  "eslintConfig": {
-    "globals": {
-      "Compartment": "readonly",
-      "templateRequire": "readonly",
-      "lockdown": "readonly"
-    }
+  "author": "kumavis",
+  "license": "MIT",
+  "engines": {
+    "node": "^18.0.0 || ^20.0.0 || ^22.0.0"
   },
-  "eslintIgnore": [
-    "/src/sourcemaps.js",
-    "/test/fixtures",
-    "/src/preludeTemplate.js",
-    "/src/kernelTemplate.js"
-  ]
+  "bin": {
+    "lavamoat-sort-policy": "./src/policy-sort-cli.js"
+  },
+  "main": "src/index.js",
+  "types": "./types/src/types.d.ts",
+  "directories": {
+    "lib": "lib"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "lib",
+    "src",
+    "types",
+    "!*.tsbuildinfo"
+  ],
+  "scripts": {
+    "lib:ses": "cp ../../node_modules/ses/dist/lockdown.umd.js ./lib/lockdown.umd.js",
+    "lint:deps": "depcheck",
+    "test": "ava && npm run test:ses",
+    "test:ses": "bash ./test/ses.sh"
+  },
+  "dependencies": {
+    "@babel/types": "7.26.9",
+    "json-stable-stringify": "1.1.1",
+    "lavamoat-tofu": "^8.0.6",
+    "merge-deep": "3.0.3",
+    "ses": "1.10.0",
+    "type-fest": "4.30.0"
+  },
+  "devDependencies": {
+    "@types/json-stable-stringify": "1.1.0",
+    "@types/merge-deep": "3.0.3",
+    "tmp-promise": "3.0.3"
+  },
+  "ava": {
+    "files": [
+      "test/*.spec.js"
+    ],
+    "timeout": "30s"
+  }
 }

@@ -1,8 +1,8 @@
 (function () {
-  "use strict"
-  return createKernel
+  'use strict'
+  return createKernelCore
 
-  function createKernel ({
+  function createKernelCore ({
     // the platform api global
     globalRef,
     // package policy object
@@ -14,22 +14,26 @@
     getExternalCompartment,
     globalThisRefs,
     // security options
+    scuttleGlobalThis,
     debugMode,
-    runWithPrecompiledModules
+    runWithPrecompiledModules,
+    reportStatsHook,
   }) {
-    // create SES-wrapped LavaMoat kernel
-    // endowments:
-    // - console is included for convenience
-    // - Math is for untamed Math.random
-    // - Date is for untamed Date.now
-    const kernelCompartment = new Compartment({ console, Math, Date })
-    let makeKernel
+    // prepare the LavaMoat kernel-core factory
+    // factory is defined within a Compartment
+    // unless "runWithPrecompiledModules" is enabled
+    let makeKernelCore
     if (runWithPrecompiledModules) {
-      makeKernel = unsafeMakeKernel
+      makeKernelCore = unsafeMakeKernelCore
     } else {
-      makeKernel = kernelCompartment.evaluate(`(${unsafeMakeKernel})\n//# sourceURL=LavaMoat/core/kernel`)
+      // endowments:
+      // - console is included for convenience
+      // - Math is for untamed Math.random
+      // - Date is for untamed Date.now
+      const kernelCompartment = new Compartment({ console, Math, Date })
+      makeKernelCore = kernelCompartment.evaluate(`(${unsafeMakeKernelCore})\n//# sourceURL=LavaMoat/core/kernel`)
     }
-    const lavamoatKernel = makeKernel({
+    const lavamoatKernel = makeKernelCore({
       globalRef,
       lavamoatConfig,
       loadModuleData,
@@ -37,16 +41,18 @@
       prepareModuleInitializerArgs,
       getExternalCompartment,
       globalThisRefs,
+      scuttleGlobalThis,
       debugMode,
-      runWithPrecompiledModules
+      runWithPrecompiledModules,
+      reportStatsHook,
     })
 
     return lavamoatKernel
   }
 
-  // this is serialized and run in SES
+  // this is serialized and run in a SES Compartment when "runWithPrecompiledModules" is false
   // mostly just exists to expose variables to internalRequire and loadBundle
-  function unsafeMakeKernel ({
+  function unsafeMakeKernelCore ({
     globalRef,
     lavamoatConfig,
     loadModuleData,
@@ -54,24 +60,35 @@
     prepareModuleInitializerArgs,
     getExternalCompartment,
     globalThisRefs = ['globalThis'],
+    scuttleGlobalThis = {},
     debugMode = false,
-    runWithPrecompiledModules = false
+    runWithPrecompiledModules = false,
+    reportStatsHook = () => {},
   }) {
     // "templateRequire" calls are inlined in "generateKernel"
-    const generalUtils = templateRequire('makeGeneralUtils')()
-    const { getEndowmentsForConfig, makeMinimalViewOfRef, applyEndowmentPropDescTransforms } = templateRequire('makeGetEndowmentsForConfig')(generalUtils)
-    const { prepareCompartmentGlobalFromConfig } = templateRequire('makePrepareRealmGlobalFromConfig')(generalUtils)
+    const { getEndowmentsForConfig, getBuiltinForConfig, applyEndowmentPropDescTransforms, copyWrappedGlobals, createFunctionWrapper } = templateRequire('endowmentsToolkit')()
+    const { prepareCompartmentGlobalFromConfig } = templateRequire('makePrepareRealmGlobalFromConfig')({ createFunctionWrapper })
+    const { strictScopeTerminator } = templateRequire('strict-scope-terminator')
+    const { scuttle } = templateRequire('scuttle')
 
     const moduleCache = new Map()
     const packageCompartmentCache = new Map()
     const globalStore = new Map()
 
-    const rootPackageName = '<root>'
+    const rootPackageName = '$root$'
     const rootPackageCompartment = createRootPackageCompartment(globalRef)
 
-    return {
-      internalRequire
+    scuttle(globalRef, scuttleGlobalThis)
+
+    const kernel = {
+      internalRequire,
     }
+    if (debugMode) {
+      kernel._getPolicyForPackage = getPolicyForPackage
+      kernel._getCompartmentForPackage = getCompartmentForPackage
+    }
+    Object.freeze(kernel)
+    return kernel
 
     // this function instantiaties a module from a moduleId.
     // 1. loads the module metadata and policy
@@ -85,52 +102,60 @@
         return moduleExports
       }
 
-      // load and validate module metadata
-      // if module metadata is missing, throw an error
-      const moduleData = loadModuleData(moduleId)
-      if (!moduleData) {
-        const err = new Error('Cannot find module \'' + moduleId + '\'')
-        err.code = 'MODULE_NOT_FOUND'
-        throw err
-      }
-      if (moduleData.id === undefined) {
-        throw new Error('LavaMoat - moduleId is not defined correctly.')
-      }
+      reportStatsHook('start', moduleId)
 
-      // parse and validate module data
-      const { package: packageName, source: moduleSource } = moduleData
-      if (!packageName) throw new Error(`LavaMoat - invalid packageName for module "${moduleId}"`)
-      const packagePolicy = getPolicyForPackage(lavamoatConfig, packageName)
+      try {
+        // load and validate module metadata
+        // if module metadata is missing, throw an error
+        const moduleData = loadModuleData(moduleId)
+        if (!moduleData) {
+          const err = new Error('Cannot find module \'' + moduleId + '\'')
+          err.code = 'MODULE_NOT_FOUND'
+          throw err
+        }
+        if (moduleData.id === undefined) {
+          throw new Error('LavaMoat - moduleId is not defined correctly.')
+        }
 
-      // create the moduleObj and initializer
-      const { moduleInitializer, moduleObj } = prepareModuleInitializer(moduleData, packagePolicy)
+        // parse and validate module data
+        const { package: packageName, source: moduleSource } = moduleData
+        if (!packageName) {
+          throw new Error(`LavaMoat - missing packageName for module "${moduleId}"`)
+        }
+        const packagePolicy = getPolicyForPackage(lavamoatConfig, packageName)
 
-      // cache moduleObj here
-      // this is important to inf loops when hitting cycles in the dep graph
-      // must cache before running the moduleInitializer
-      moduleCache.set(moduleId, moduleObj)
+        // create the moduleObj and initializer
+        const { moduleInitializer, moduleObj } = prepareModuleInitializer(moduleData, packagePolicy)
 
-      // validate moduleInitializer
-      if (typeof moduleInitializer !== 'function') {
-        throw new Error(`LavaMoat - moduleInitializer is not defined correctly. got "${typeof moduleInitializer}"\n${moduleSource}`)
-      }
+        // cache moduleObj here
+        // this is important to inf loops when hitting cycles in the dep graph
+        // must cache before running the moduleInitializer
+        moduleCache.set(moduleId, moduleObj)
 
-      // initialize the module with the correct context
-      const initializerArgs = prepareModuleInitializerArgs(requireRelativeWithContext, moduleObj, moduleData)
-      moduleInitializer.apply(moduleObj.exports, initializerArgs)
-      const moduleExports = moduleObj.exports
+        // validate moduleInitializer
+        if (typeof moduleInitializer !== 'function') {
+          throw new Error(`LavaMoat - moduleInitializer is not defined correctly. got "${typeof moduleInitializer}"\n${moduleSource}`)
+        }
 
-      return moduleExports
+        // initialize the module with the correct context
+        const initializerArgs = prepareModuleInitializerArgs(requireRelativeWithContext, moduleObj, moduleData)
+        moduleInitializer.apply(moduleObj.exports, initializerArgs)
+        const moduleExports = moduleObj.exports
+        return moduleExports
 
-      // this is passed to the module initializer
-      // it adds the context of the parent module
-      // this could be replaced via "Function.prototype.bind" if its more performant
-      function requireRelativeWithContext (requestedName) {
-        const parentModuleExports = moduleObj.exports
-        const parentModuleData = moduleData
-        const parentPackagePolicy = packagePolicy
-        const parentModuleId = moduleId
-        return requireRelative({ requestedName, parentModuleExports, parentModuleData, parentPackagePolicy, parentModuleId })
+        // this is passed to the module initializer
+        // it adds the context of the parent module
+        // this could be replaced via "Function.prototype.bind" if its more performant
+        // eslint-disable-next-line no-inner-declarations
+        function requireRelativeWithContext (requestedName) {
+          const parentModuleExports = moduleObj.exports
+          const parentModuleData = moduleData
+          const parentPackagePolicy = packagePolicy
+          const parentModuleId = moduleId
+          return requireRelative({ requestedName, parentModuleExports, parentModuleData, parentPackagePolicy, parentModuleId })
+        }
+      } finally {
+        reportStatsHook('end', moduleId)
       }
     }
 
@@ -140,7 +165,8 @@
       const parentModulePackageName = parentModuleData.package
       const parentPackagesWhitelist = parentPackagePolicy.packages
       const parentBuiltinsWhitelist = Object.entries(parentPackagePolicy.builtin)
-        .filter(([_, allowed]) => allowed === true)
+        .filter(([, allowed]) => allowed === true)
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         .map(([packagePath, allowed]) => packagePath.split('.')[0])
 
       // resolve the moduleId from the requestedName
@@ -177,21 +203,15 @@
       // validate that the import is allowed
       if (!parentIsEntryModule && !isSamePackage && !isInParentWhitelist) {
         let typeText = ' '
-        if (moduleData.type === 'builtin') typeText = ' node builtin '
-        throw new Error(`LavaMoat - required${typeText}package not in whitelist: package "${parentModulePackageName}" requested "${packageName}" as "${requestedName}"`)
+        if (moduleData.type === 'builtin') {
+          typeText = ' node builtin '
+        }
+        throw new Error(`LavaMoat - required${typeText}package not in allowlist: package "${parentModulePackageName}" requested "${packageName}" as "${requestedName}"`)
       }
 
       // create minimal selection if its a builtin and the whole path is not selected for
       if (!parentIsEntryModule && moduleData.type === 'builtin' && !parentPackagePolicy.builtin[moduleId]) {
-        const builtinPaths = (
-          Object.entries(parentPackagePolicy.builtin)
-          // grab all allowed builtin paths that match this package
-            .filter(([packagePath, allowed]) => allowed === true && moduleId === packagePath.split('.')[0])
-          // only include the paths after the packageName
-            .map(([packagePath, allowed]) => packagePath.split('.').slice(1).join('.'))
-            .sort()
-        )
-        moduleExports = makeMinimalViewOfRef(moduleExports, builtinPaths)
+        moduleExports = getBuiltinForConfig(moduleExports, moduleId, parentPackagePolicy.builtin)
       }
 
       return moduleExports
@@ -234,9 +254,12 @@
           // moduleObj must be from the same Realm as the moduleInitializer (eg dart2js runtime requirement)
           // here we are assuming the provided moduleInitializer is from the same Realm as this kernel
           moduleObj = { exports: {} }
-          const { scopeProxy } = packageCompartment.__makeScopeProxy__()
+          const evalKit = {
+            globalThis: packageCompartment.globalThis,
+            scopeTerminator: strictScopeTerminator,
+          }
           // this invokes the with-proxy wrapper
-          const moduleInitializerFactory = precompiledInitializer.call(scopeProxy)
+          const moduleInitializerFactory = precompiledInitializer.call(evalKit)
           // this ensures strict mode
           moduleInitializer = moduleInitializerFactory()
         } else {
@@ -268,50 +291,8 @@
       // - Math is for untamed Math.random
       // - Date is for untamed Date.now
       const rootPackageCompartment = new Compartment({ Math, Date })
-      // find the relevant endowment sources
-      const globalProtoChain = getPrototypeChain(globalRef)
-      // the index for the common prototypal ancestor, Object.prototype
-      // this should always be the last index, but we check just in case
-      const commonPrototypeIndex = globalProtoChain.findIndex(globalProtoChainEntry => globalProtoChainEntry === Object.prototype)
-      if (commonPrototypeIndex === -1) throw new Error('Lavamoat - unable to find common prototype between Compartment and globalRef')
-      // we will copy endowments from all entries in the prototype chain, excluding Object.prototype
-      const endowmentSources = globalProtoChain.slice(0, commonPrototypeIndex)
 
-      // call all getters, in case of behavior change (such as with FireFox lazy getters)
-      // call on contents of endowmentsSources directly instead of in new array instances. If there is a lazy getter it only changes the original prop desc.
-      endowmentSources.forEach(source => {
-        const descriptors = Object.getOwnPropertyDescriptors(source)
-        Object.values(descriptors).forEach(desc => {
-          if ('get' in desc) {
-            Reflect.apply(desc.get, globalRef, [])
-          }
-        })
-      })
-
-      const endowmentSourceDescriptors = endowmentSources.map(globalProtoChainEntry => Object.getOwnPropertyDescriptors(globalProtoChainEntry))
-      // flatten propDesc collections with precedence for globalThis-end of the prototype chain
-      const endowmentDescriptorsFlat = Object.assign(Object.create(null), ...endowmentSourceDescriptors.reverse())
-      // expose all own properties of globalRef, including non-enumerable
-      Object.entries(endowmentDescriptorsFlat)
-        // ignore properties already defined on compartment global
-        .filter(([key]) => !(key in rootPackageCompartment.globalThis))
-        // ignore circular globalThis refs
-        .filter(([key]) => !(globalThisRefs.includes(key)))
-        // define property on compartment global
-        .forEach(([key, desc]) => {
-          // unwrap functions, setters/getters & apply scope proxy workaround
-          const wrappedPropDesc = applyEndowmentPropDescTransforms(desc, rootPackageCompartment, globalRef)
-          Reflect.defineProperty(rootPackageCompartment.globalThis, key, wrappedPropDesc)
-        })
-      // global circular references otherwise added by prepareCompartmentGlobalFromConfig
-      // Add all circular refs to root package compartment globalThis
-      for (const ref of globalThisRefs) {
-        if (ref in rootPackageCompartment.globalThis) {
-          continue
-        }
-        rootPackageCompartment.globalThis[ref] = rootPackageCompartment.globalThis
-      }
-
+      copyWrappedGlobals(globalRef, rootPackageCompartment.globalThis, globalThisRefs)
       // save the compartment for use by other modules in the package
       packageCompartmentCache.set(rootPackageName, rootPackageCompartment)
 
@@ -347,7 +328,7 @@
           // unwrap to
           globalRef,
           // unwrap from
-          packageCompartment.globalThis
+          packageCompartment.globalThis,
         )
       } catch (err) {
         const errMsg = `Lavamoat - failed to prepare endowments for package "${packageName}":\n${err.stack}`
@@ -355,11 +336,12 @@
       }
 
       // transform functions, getters & setters on prop descs. Solves SES scope proxy bug
+      // WARNING: this part should be unnecessary since SES refactor into multiple nested with statements
       Object.entries(Object.getOwnPropertyDescriptors(endowments))
         // ignore non-configurable properties because we are modifying endowments in place
-        .filter(([key, propDesc]) => propDesc.configurable)
+        .filter(([, propDesc]) => propDesc.configurable)
         .forEach(([key, propDesc]) => {
-          const wrappedPropDesc = applyEndowmentPropDescTransforms(propDesc, packageCompartment, rootPackageCompartment.globalThis)
+          const wrappedPropDesc = applyEndowmentPropDescTransforms(propDesc, packageCompartment.globalThis, rootPackageCompartment.globalThis)
           Reflect.defineProperty(endowments, key, wrappedPropDesc)
         })
 
@@ -383,16 +365,5 @@
       return packageConfig
     }
 
-    // util for getting the prototype chain as an array
-    // includes the provided value in the result
-    function getPrototypeChain (value) {
-      const protoChain = []
-      let current = value
-      while (current && (typeof current === 'object' || typeof current === 'function')) {
-        protoChain.push(current)
-        current = Reflect.getPrototypeOf(current)
-      }
-      return protoChain
-    }
   }
 })()

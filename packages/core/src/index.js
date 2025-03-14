@@ -1,27 +1,34 @@
-const {
-  generateKernel
-} = require('./generateKernel')
-const { packageDataForModule, packageNameFromPath } = require('./packageData')
+const { generateKernel } = require('./generateKernel')
 const { createModuleInspector, getDefaultPaths } = require('./generatePolicy')
 const { parseForPolicy } = require('./parseForPolicy')
 const { LavamoatModuleRecord } = require('./moduleRecord')
-const { loadPolicy } = require('./loadPolicy')
+const {
+  loadPolicy,
+  loadPolicyAndApplyOverrides,
+  loadPoliciesSync,
+} = require('./loadPolicy')
 const { mergePolicy } = require('./mergePolicy')
 const { applySourceTransforms } = require('./sourceTransforms')
+const { makeInitStatsHook } = require('./makeInitStatsHook')
+const endowmentsToolkit = require('./endowmentsToolkit')
+const { jsonStringifySortedPolicy } = require('./stringifyPolicy')
 
 module.exports = {
   // generating the kernel
   generateKernel,
-  // decorating moduleData with package data
-  packageNameFromPath,
-  packageDataForModule,
   // generating lavamoat config
   createModuleInspector,
   parseForPolicy,
   loadPolicy,
   mergePolicy,
+  loadPolicyAndApplyOverrides,
+  loadPoliciesSync,
+  jsonStringifySortedPolicy,
   getDefaultPaths,
   applySourceTransforms,
   // module record class
-  LavamoatModuleRecord
+  LavamoatModuleRecord,
+  // utils
+  makeInitStatsHook,
+  endowmentsToolkit,
 }

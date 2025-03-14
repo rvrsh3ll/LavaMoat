@@ -1,29 +1,36 @@
 {
   "name": "lavamoat-perf",
-  "private": true,
   "version": "0.0.0",
-  "scripts": {
-    "serve": "serve .",
-    "start": "yarn run start:wallet && yarn run start:localOnly && yarn run start:requireLoop && yarn run start:secp256k1 && yarn run start:newBN",
-    "start:wallet": "(cd trials/wallet && yarn && yarn start)",
-    "start:localOnly": "(cd trials/localOnly && yarn && yarn start)",
-    "start:requireLoop": "(cd trials/requireLoop && yarn && yarn start)",
-    "start:secp256k1": "(cd trials/secp256k1-mixedAdd && yarn && yarn start)",
-    "start:newBN": "(cd trials/secp256k1-newBN && yarn && yarn start)"
-  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/LavaMoat/LavaMoat.git",
-    "directory":"packages/perf"
+    "url": "git+https://github.com/LavaMoat/LavaMoat.git",
+    "directory": "packages/perf"
+  },
+  "private": true,
+  "engines": {
+    "node": "^18.0.0 || ^20.0.0 <20.15.0 || ^20.17.0 || ^22.5.1"
+  },
+  "scripts": {
+    "run:bify-simple": "(cd trials/bify-simple && npm install && npm start)",
+    "run:increment": "(cd trials/increment && npm install && npm start)",
+    "run:pull-stream": "(cd trials/pull-stream && npm install && npm start)",
+    "run:secp256k1-mixedAdd": "(cd trials/secp256k1-mixedAdd && npm install && npm start)",
+    "run:secp256k1-newBN": "(cd trials/secp256k1-newBN && npm install && npm start)",
+    "run:terser": "(cd trials/terser && npm install && npm start)",
+    "run:wallet": "(cd trials/wallet && npm install && npm start)",
+    "serve": "^14.2.0",
+    "start": "npm run run:wallet && npm run run:increment && npm run run:secp256k1-mixedAdd && npm run run:secp256k1-newBN && npm run run:bify-simple && npm run run:pull-stream && npm run run:terser",
+    "test": "exit 0"
   },
   "dependencies": {
-    "browserify": "^16.5.0",
-    "lavamoat-browserify": "4.0.0",
-    "readable-stream": "^3.6.0",
-    "ses": "^0.6.4"
+    "@endo/compartment-mapper": "1.5.0",
+    "browserify": "17.0.1",
+    "readable-stream": "4.5.2",
+    "ses": "1.10.0"
   },
   "devDependencies": {
-    "serve": "^11.2.0"
-  },
-  "gitHead": "b5908eb5b2eda4a49fb7abd4d1b6e69fb9a98d0a"
+    "lavamoat": "^9.0.0",
+    "lavamoat-browserify": "^18.0.0",
+    "serve": "14.2.4"
+  }
 }

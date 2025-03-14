@@ -1,12 +1,15 @@
 const browserify = require('browserify')
-const lavamoatPlugin = require('../../src/index')
+const lavamoatPlugin = require(process.env.PLUGIN_PATH)
 
 browserify([], {
   plugin: [
-    [lavamoatPlugin, { 
-      writeAutoPolicy: true,
-      writeAutoPolicyDebug: true
-    }]
+    [
+      lavamoatPlugin,
+      {
+        writeAutoPolicy: true,
+        writeAutoPolicyDebug: true,
+      },
+    ],
   ],
   debug: true,
 }).bundle()

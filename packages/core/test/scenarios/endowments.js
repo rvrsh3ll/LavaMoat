@@ -23,33 +23,42 @@ module.exports = [
         testCheck: (target) => {
           // console.log(`Test Check: target: ${target} testObj: ${testObj}`)
           return target === testObj
-        }
+        },
       },
       config: {
         resources: {
           one: {
             globals: {
-              testCheck: true
-            }
+              testCheck: true,
+            },
           },
           two: {
             globals: {
-              testGet: true
-            }
-          }
-        }
+              testGet: true,
+            },
+          },
+        },
       },
-      expectedResult: true
+      expectedResult: true,
     })
     return scenario
   },
   async () => {
     const scenario = createScenarioFromScaffold({
       name: 'endowments - Date.now works in root and non-root',
+      configOverride: {
+        resources: {
+          one: {
+            globals: {
+              Date: true,
+            },
+          },
+        },
+      },
       defineEntry: () => {
         const testResult = {
           root: Date.now(),
-          non: require('one')
+          non: require('one'),
         }
         // standard test result serialization
         console.log(JSON.stringify(testResult, null, 2))
@@ -63,12 +72,12 @@ module.exports = [
         t.is(typeof result.non, 'number')
         t.is(isRecent(result.root), true)
         t.is(isRecent(result.non), true)
-        function isRecent (time) {
+        function isRecent(time) {
           // more recent than 2020-01-01T00:00:00.000Z
           return time > 1577836800000
         }
-      }
+      },
     })
     return scenario
-  }
+  },
 ]

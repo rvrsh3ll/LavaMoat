@@ -1,32 +1,64 @@
 {
-  "name": "lavamoat-webpack",
-  "version": "1.0.5",
-  "description": "webpack plugin for sandboxing dependencies with LavaMoat",
-  "main": "./src/index.js",
-  "devDependencies": {
-    "metamask-logo": "^2.2.1",
-    "serve": "^11.3.0",
-    "webpack": "^4.41.0",
-    "webpack-cli": "^3.3.9"
+  "name": "@lavamoat/webpack",
+  "version": "0.9.0-beta.0",
+  "description": "LavaMoat Webpack plugin for running dependencies in Compartments without eval",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LavaMoat/lavamoat.git",
+    "directory": "packages/webpack"
   },
-  "scripts": {
-    "lavamoat": "(cd test/project1/ && webpack entry.js)",
-    "start": "(cd test/project1/ && serve dist)",
-    "test": "yarn lavamoat"
-  },
-  "dependencies": {
-    "merge-deep": "^3.0.2",
-    "mkdirp": "^1.0.3",
-    "webpack-sources": "^1.4.3"
-  },
-  "directories": {
-    "test": "test"
-  },
-  "repository": "git+https://github.com/LavaMoat/lavamoat.git",
+  "homepage": "https://github.com/LavaMoat/lavamoat#readme",
   "bugs": {
     "url": "https://github.com/LavaMoat/lavamoat/issues"
   },
-  "homepage": "https://github.com/LavaMoat/lavamoat#readme",
-  "author": "kumavis",
-  "license": "MIT"
+  "author": "LavaMoat Team",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": "^18.0.0 || ^20.0.0 || ^22.5.1",
+    "npm": ">=7.0.0"
+  },
+  "main": "src/plugin.js",
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "webpack",
+    "bundle",
+    "security",
+    "ses",
+    "compartment",
+    "sandbox",
+    "hardened"
+  ],
+  "scripts": {
+    "test": "ava"
+  },
+  "peerDependencies": {
+    "webpack": "^5.80.2"
+  },
+  "dependencies": {
+    "@lavamoat/aa": "^4.3.2",
+    "browser-resolve": "2.0.0",
+    "json-stable-stringify": "1.1.1",
+    "lavamoat-core": "^16.3.2",
+    "ses": "1.10.0"
+  },
+  "devDependencies": {
+    "@babel/preset-env": "7.26.9",
+    "@babel/preset-typescript": "7.26.0",
+    "@types/browser-resolve": "2.0.4",
+    "babel-loader": "9.2.1",
+    "css-loader": "7.1.2",
+    "file-loader": "6.2.0",
+    "html-webpack-plugin": "5.6.3",
+    "memfs": "4.17.0",
+    "mini-css-extract-plugin": "2.9.2",
+    "webpack": "5.95.0"
+  },
+  "ava": {
+    "files": [
+      "test/*.spec.js"
+    ],
+    "timeout": "30s"
+  }
 }

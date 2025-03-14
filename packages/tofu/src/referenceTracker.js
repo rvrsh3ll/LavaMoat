@@ -5,7 +5,7 @@ const pathLookup = new WeakMap()
 module.exports = {
   expandUsage,
   pathLookup,
-  getGraph
+  getGraph,
 }
 
 // // -> where do the inputs to function "b" come from?
@@ -18,13 +18,32 @@ module.exports = {
 //   console.log(`function "b" used at ${firstUsageOfBLabel}`)
 // }
 
-function getGraph (targetPath) {
-  const nodes = new Set(); const links = []
+/**
+ * @typedef Link
+ * @property {import('@babel/types').Node} from
+ * @property {import('@babel/types').Node} to
+ * @property {string} label
+ */
+
+/**
+ *
+ * @param {import('@babel/traverse').NodePath<import('@babel/types').Node>} targetPath
+ * @returns
+ */
+function getGraph(targetPath) {
+  const nodes = new Set()
+  /** @type {Link[]} */
+  const links = []
   walkUsage(targetPath, {
     // onNode (refLink) {
     //   nodes.push()
     // },
-    onLink (targetPath, refLink) {
+    /**
+     *
+     * @param {import('@babel/traverse').NodePath<import('@babel/types').Node>} targetPath
+     * @param {*} refLink
+     */
+    onLink(targetPath, refLink) {
       const originNode = targetPath.node
       const destNode = refLink.path.node
       const linkLabel = refLink.label
@@ -34,42 +53,74 @@ function getGraph (targetPath) {
       nodes.add(originNode)
       nodes.add(destNode)
       links.push({ from: originNode, to: destNode, label: linkLabel })
-    }
+    },
   })
   return { links, nodes: Array.from(nodes) }
 }
 
-function expandUsage (targetPath) {
+/**
+ *
+ * @param {import('@babel/traverse').NodePath<import('@babel/types').Node>} targetPath
+ * @returns
+ */
+function expandUsage(targetPath) {
+  /**
+   * @type {ReferenceLinkage[]}
+   */
   const nodes = []
+  /** @type {import('@babel/traverse').NodePath<import('@babel/types').Node>[]} */
   const leaves = []
 
   walkUsage(targetPath, { onNode, onLeaf })
 
   return { nodes, leaves }
 
-  function onNode (refLink) {
+  /**
+   * @param {ReferenceLinkage} refLink
+   */
+  function onNode(refLink) {
     console.log('node:', refLink.label)
     nodes.push(refLink)
   }
 
-  function onLeaf (path) {
+  /**
+   * @param {import('@babel/traverse').NodePath<import('@babel/types').Node>} path
+   */
+  function onLeaf(path) {
     console.log('leaf:', path.node.type)
     leaves.push(path)
   }
 }
 
-function walkUsage (targetPath, { onNode = noop, onLeaf = noop, onLink = noop }) {
+/**
+ * @typedef WalkUsageOptions
+ * @property {(refLink: ReferenceLinkage) => void} onNode
+ * @property {(path: import('@babel/traverse').NodePath<import('@babel/types').Node>) => void} onLeaf
+ * @property {(originPath: import('@babel/traverse').NodePath<import('@babel/types').Node>, refLink: ReferenceLinkage) => void} onLink
+ */
+
+/**
+ *
+ * @param {import('@babel/traverse').NodePath<import('@babel/types').Node>} targetPath
+ * @param {*} param1
+ * @returns
+ */
+function walkUsage(
+  targetPath,
+  { onNode = noop, onLeaf = noop, onLink = noop }
+) {
+  /** @type {ReferenceLinkage[]} */
   let children
   try {
     children = tracePathToUsages(targetPath)
   } catch (err) {
-    if (err.code === 'ERR_REF_OUT_OF_SCOPE') {
+    if (RefOutOfScopeError.isRefOutOfScopeError(err)) {
       onLeaf(targetPath)
       return
     }
     throw err
   }
-  children.forEach(refLink => {
+  children.forEach((refLink) => {
     onNode(refLink)
     onLink(targetPath, refLink)
     walkUsage(refLink.path, { onNode, onLeaf })
@@ -77,28 +128,70 @@ function walkUsage (targetPath, { onNode = noop, onLeaf = noop, onLink = noop })
 }
 
 class ReferenceLinkage {
-  constructor ({ path, label }) {
+  /**
+   *
+   * @param {{path: import('@babel/traverse').NodePath, label: string}} param0
+   */
+  constructor({ path, label }) {
     this.path = path
     this.label = label
   }
 }
 
-function makeReferenceLinkagesFromBinding (targetBinding) {
+/**
+ *
+ * @param {import('@babel/traverse').Binding} [targetBinding]
+ * @returns {ReferenceLinkage[]}
+ */
+function makeReferenceLinkagesFromBinding(targetBinding) {
+  /** @type {ReferenceLinkage[]} */
   const results = []
-  targetBinding.referencePaths.forEach((ref) => {
+  targetBinding?.referencePaths.forEach((ref) => {
     results.push(makeReferenceLinkageForIdentifier(ref))
   })
   return results
 }
 
 class RefOutOfScopeError extends Error {
-  constructor () {
+  constructor() {
     super()
-    this.code = 'ERR_REF_OUT_OF_SCOPE'
+    this.code = RefOutOfScopeError.code
+  }
+
+  /**
+   * @param {unknown} err
+   * @returns {err is RefOutOfScopeError}
+   */
+  static isRefOutOfScopeError(err) {
+    return Boolean(
+      err &&
+        (err instanceof RefOutOfScopeError ||
+          (typeof err === 'object' &&
+            'code' in err &&
+            err.code === RefOutOfScopeError.code))
+    )
   }
 }
+RefOutOfScopeError.code = 'ERR_REF_OUT_OF_SCOPE'
+
+/**
+ * @typedef {import('@babel/types').CallExpression|import('@babel/types').Identifier|import('@babel/types').ReturnStatement|import('@babel/types').VariableDeclarator|import('@babel/types').MemberExpression} DetectableNode
+ */
+
+/**
+ * @template {DetectableNode} T
+ * @typedef {(targetPath: import('@babel/traverse').NodePath<T>) => ReferenceLinkage[]} Detector
+ */
+
+/**
+ * @template {DetectableNode} [T=DetectableNode]
+ * @typedef {import('@babel/traverse').NodePath<T>} DetectableNodePath
+ */
 
 const usageDetectors = {
+  /**
+   * @type {Detector<import('@babel/types').Identifier>}
+   */
   Identifier: (targetPath) => {
     switch (targetPath.parent.type) {
       case 'CallExpression': {
@@ -107,33 +200,57 @@ const usageDetectors = {
           const argIndex = targetPath.parent.arguments.indexOf(targetPath.node)
           const fnCallee = targetPath.parent.callee
           if (fnCallee.type === 'Identifier') {
-            const fnName = targetPath.parent.callee.name
-            const fnBinding = targetPath.scope.getBinding(fnName)
-            const fnDeclaration = fnBinding.path.node
+            if ('name' in targetPath.parent.callee) {
+              const fnName = targetPath.parent.callee.name
+              const fnBinding = targetPath.scope.getBinding(fnName)
+              if (fnBinding?.path.isFunctionDeclaration()) {
+                const fnDeclaration = fnBinding.path.node
 
-            // TODO: support for destructuring, defaults, spreads
-            // TODO: also check usage of `arguments`
-            const fnArgIdentifier = fnDeclaration.params[argIndex]
-            const fnArgName = fnArgIdentifier.name
-            const fnArgBinding = fnBinding.path.scope.getBinding(fnArgName)
-            const fnArgPath = fnArgBinding.path
+                // TODO: support for destructuring, defaults, spreads
+                // TODO: also check usage of `arguments`
+                const fnArgIdentifier = fnDeclaration.params[argIndex]
+                if ('name' in fnArgIdentifier) {
+                  const fnArgName = fnArgIdentifier.name
+                  const fnArgBinding =
+                    fnBinding.path.scope.getBinding(fnArgName)
+                  if (fnArgBinding) {
+                    const fnArgPath = fnArgBinding.path
 
-            return [
-              new ReferenceLinkage({ path: fnArgPath, label: 'arg in fn dec' })
-            ]
+                    return [
+                      new ReferenceLinkage({
+                        path: fnArgPath,
+                        label: 'arg in fn dec',
+                      }),
+                    ]
+                  }
+                }
+              }
+            }
           }
           const fnCalleePath = pathLookup.get(fnCallee)
           return [
-            new ReferenceLinkage({ path: fnCalleePath, label: 'arg in fn dec (unknown)' })
+            new ReferenceLinkage({
+              path: fnCalleePath,
+              label: 'arg in fn dec (unknown)',
+            }),
           ]
         }
-        if (targetPath.parentKey === 'callee') {
+        if (
+          targetPath.parentPath.isCallExpression() &&
+          targetPath.parentKey === 'callee'
+        ) {
           return usageDetectors[targetPath.parent.type](targetPath.parentPath)
         }
-        throw new Error(`makeReferenceLinkageForIdentifier/CallExpression - unknown parent key "${targetPath.parentKey}"`)
+        throw new Error(
+          `makeReferenceLinkageForIdentifier/CallExpression - unknown parent key "${targetPath.parentKey}"`
+        )
       }
       case 'ReturnStatement': {
-        return usageDetectors[targetPath.parent.type](targetPath.parentPath)
+        return usageDetectors[targetPath.parent.type](
+          /** @type {import('@babel/traverse').NodePath<import('@babel/types').ReturnStatement>} */ (
+            targetPath.parentPath
+          )
+        )
       }
       case 'FunctionDeclaration': {
         if (targetPath.parentKey === 'params') {
@@ -142,58 +259,113 @@ const usageDetectors = {
           const fnArgUsages = makeReferenceLinkagesFromBinding(fnArgBinding)
           return fnArgUsages
         }
-        throw new Error(`makeReferenceLinkageForIdentifier/CallExpression - unknown parent key "${targetPath.parentKey}"`)
+        throw new Error(
+          `makeReferenceLinkageForIdentifier/CallExpression - unknown parent key "${targetPath.parentKey}"`
+        )
       }
       default: {
-        throw new Error(`makeReferenceLinkageForIdentifier - unknown parent type "${targetPath.parent.type}"`)
+        throw new Error(
+          `makeReferenceLinkageForIdentifier - unknown parent type "${targetPath.parent.type}"`
+        )
       }
     }
   },
+  /**
+   * @type {Detector<import('@babel/types').CallExpression>}
+   */
   CallExpression: (targetPath) => {
     // usages are where the result goes, and the containing function
     const fnResultUsages = tracePathToUsages(targetPath.parentPath)
     return fnResultUsages
   },
+  /**
+   * @type {Detector<import('@babel/types').ReturnStatement>}
+   */
   ReturnStatement: (targetPath) => {
     // usages are all references to this function
     const fnUsages = traceFunctionDeclarationToUsages(targetPath.scope.path)
     return fnUsages
   },
+  /**
+   * @type {Detector<import('@babel/types').VariableDeclarator>}
+   */
   VariableDeclarator: (targetPath) => {
     // value is being stored in a reference, track usage
-    const variableName = targetPath.node.id.name
-    const variableBinding = targetPath.scope.getBinding(variableName)
-    const bindingUsages = makeReferenceLinkagesFromBinding(variableBinding)
-    return bindingUsages
+    if ('name' in targetPath.node.id) {
+      const variableName = targetPath.node.id.name
+      const variableBinding = targetPath.scope.getBinding(variableName)
+      const bindingUsages = makeReferenceLinkagesFromBinding(variableBinding)
+      return bindingUsages
+    }
+    return []
   },
+  /**
+   * @type {Detector<import('@babel/types').MemberExpression>}
+   */
   MemberExpression: (targetPath) => {
     const leftSide = targetPath.node.object
     if (leftSide.type === 'Identifier') {
       const binding = targetPath.scope.getBinding(leftSide.name)
       if (binding) {
-        return new ReferenceLinkage({ path: binding.path, label: 'parent of member' })
+        // @ts-ignore - FIXME needs logic changes for type safety
+        return new ReferenceLinkage({
+          path: binding.path,
+          label: 'parent of member',
+        })
       } else {
         throw new RefOutOfScopeError()
       }
     }
     const leftSidePath = pathLookup.get(leftSide)
-    return new ReferenceLinkage({ path: leftSidePath, label: 'parent of member (unknown)' })
-  }
+    // @ts-ignore - FIXME needs logic changes for type safety
+    return new ReferenceLinkage({
+      path: leftSidePath,
+      label: 'parent of member (unknown)',
+    })
+  },
 }
 
-function tracePathToUsages (targetPath) {
+/**
+ * @template {import('@babel/types').Node} T
+ * @param {import('@babel/traverse').NodePath<T>} path
+ * @returns {path is DetectableNodePath<infer U>}
+ */
+function isDetectableNodePath(path) {
+  return path.node.type in usageDetectors
+}
+
+/**
+ * @param {import('@babel/traverse').NodePath} targetPath
+ * @returns {ReferenceLinkage[]}
+ */
+function tracePathToUsages(targetPath) {
+  if (!targetPath) {
+    throw new Error('tracePathToUsages - targetPath is null')
+  }
   // TODO: fold makeReferenceLinkagesFromBinding into here, create ReferenceLinkage here
-  const detector = usageDetectors[targetPath.node.type]
-  if (!detector) {
-    throw new Error(`tracePathToUsages - Unable to parse usage of reference inside node type "${targetPath.node.type}"`)
+  if (isDetectableNodePath(targetPath)) {
+    const detector = /** @type {Detector<typeof targetPath.node>} */ (
+      usageDetectors[targetPath.node.type]
+    )
+
+    return detector(targetPath)
   }
-  return detector(targetPath)
+  throw new Error(
+    `tracePathToUsages - Unable to parse usage of reference inside node type "${targetPath.node.type}"`
+  )
 }
 
+/**
+ *
+ * @param {import('@babel/traverse').NodePath<import('@babel/types').Node>} targetPath
+ * @returns {ReferenceLinkage}
+ */
 // creates a ReferenceLinkage for node of type Identifier, with a handy contextual label
-function makeReferenceLinkageForIdentifier (targetPath) {
+function makeReferenceLinkageForIdentifier(targetPath) {
   if (targetPath.node.type !== 'Identifier') {
-    throw new Error(`makeReferenceLinkageForIdentifier - only supports type Identiter, got "${targetPath.node.type}"`)
+    throw new Error(
+      `makeReferenceLinkageForIdentifier - only supports type Identiter, got "${targetPath.node.type}"`
+    )
   }
   switch (targetPath.parent.type) {
     case 'CallExpression': {
@@ -205,31 +377,48 @@ function makeReferenceLinkageForIdentifier (targetPath) {
         // value is being used directly, add to results
         return new ReferenceLinkage({ path: targetPath, label: 'called as fn' })
       }
-      throw new Error(`makeReferenceLinkageForIdentifier/CallExpression - unknown parent key "${targetPath.parentKey}"`)
+      throw new Error(
+        `makeReferenceLinkageForIdentifier/CallExpression - unknown parent key "${targetPath.parentKey}"`
+      )
     }
     case 'ReturnStatement': {
-      return new ReferenceLinkage({ path: targetPath, label: 'return value of fn' })
+      return new ReferenceLinkage({
+        path: targetPath,
+        label: 'return value of fn',
+      })
     }
     default: {
-      throw new Error(`makeReferenceLinkageForIdentifier - unknown parent type "${targetPath.parent.type}"`)
+      throw new Error(
+        `makeReferenceLinkageForIdentifier - unknown parent type "${targetPath.parent.type}"`
+      )
     }
   }
 }
 
-function traceFunctionDeclarationToUsages (targetPath) {
+/**
+ *
+ * @param {import('@babel/traverse').NodePath<import('@babel/types').Node>} targetPath
+ * @returns
+ */
+function traceFunctionDeclarationToUsages(targetPath) {
+  /** @type {ReferenceLinkage[]} */
   let results = []
   // check usage higher in path (a = function b(){})
-  switch (targetPath.parentPath.type) {
+  switch (targetPath.parentPath?.type) {
     case 'BlockStatement': {
       // value is not being used directly, skip
       break
     }
     default: {
-      throw new Error(`traceFunctionDeclarationToUsages - Unable to parse usage of reference inside node type "${targetPath.parentPath.type}"`)
+      throw new Error(
+        `traceFunctionDeclarationToUsages - Unable to parse usage of reference inside node type "${targetPath.parentPath?.type}"`
+      )
     }
   }
   // check usage in scope (function b(){}; b())
-  const scopeBinding = Object.values(targetPath.parentPath.scope.bindings).find(({ path }) => path === targetPath)
+  const scopeBinding = Object.values(targetPath.parentPath.scope.bindings).find(
+    ({ path }) => path === targetPath
+  )
   if (scopeBinding) {
     const bindingUsages = makeReferenceLinkagesFromBinding(scopeBinding)
     results = [...results, ...bindingUsages]

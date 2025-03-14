@@ -1,46 +1,78 @@
 {
-  "name": "lavamoat",
-  "bin": {
-    "lavamoat": "src/index.js"
+  "name": "@lavamoat/node",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Next-gen LavaMoat for Node.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LavaMoat/LavaMoat.git",
+    "directory": "packages/node"
   },
-  "version": "5.3.5",
-  "main": "index.js",
+  "homepage": "https://lavamoat.github.io",
+  "bugs": "https://github.com/LavaMoat/LavaMoat/issues",
+  "author": "LavaMoat Project",
   "license": "MIT",
-  "scripts": {
-    "test": "yarn test:prep && yarn test:run",
-    "test:prep": "for d in ./test/projects/*/ ; do (cd \"$d\" && yarn setup); done",
-    "test:run": "ava test/index.js --timeout=2m",
-    "lint": "npm run lint:eslint && npm run lint:deps",
-    "lint:eslint": "eslint \"src/**/*.js\" \"test/**/*.js\"",
-    "lint:fix": "eslint src/**/*.js test/*.js --fix",
-    "lint:deps": "depcheck"
+  "engines": {
+    "node": "^18.0.0 || ^20.0.0 || ^22.0.0",
+    "npm": ">=9.0.0"
   },
-  "dependencies": {
-    "@babel/code-frame": "^7.10.4",
-    "@babel/highlight": "^7.10.4",
-    "bindings": "^1.5.0",
-    "htmlescape": "^1.1.1",
-    "json-stable-stringify": "^1.0.1",
-    "lavamoat-core": "^11.0.0",
-    "lavamoat-tofu": "^5.1.3",
-    "node-gyp-build": "^4.2.3",
-    "object.fromentries": "^2.0.2",
-    "resolve": "^1.17.0",
-    "yargs": "^16.0.0"
+  "bin": {
+    "lavamoat": "src/cli.js"
   },
-  "devDependencies": {
-    "eslint-plugin-ava": "^11.0.0",
-    "eslint-plugin-standard": "^5.0.0"
+  "exports": {
+    ".": {
+      "types": "./types/src/index.d.ts",
+      "import": "./src/index.js"
+    },
+    "./cli": {
+      "types": "./types/src/cli.d.ts",
+      "import": "./src/cli.js"
+    },
+    "./execute": {
+      "types": "./types/src/exec/execute.d.ts",
+      "import": "./src/exec/execute.js"
+    },
+    "./load": {
+      "types": "./types/src/exec/load.d.ts",
+      "import": "./src/exec/load.js"
+    },
+    "./package.json": "./package.json"
   },
   "directories": {
-    "example": "examples",
     "test": "test"
   },
-  "author": "kumavis",
-  "repository": "git+https://github.com/LavaMoat/lavamoat.git",
-  "bugs": {
-    "url": "https://github.com/LavaMoat/lavamoat/issues"
+  "scripts": {
+    "lint:deps": "depcheck",
+    "test": "npm run test:run",
+    "test:run": "ava",
+    "test:update-snapshots": "ava -u"
   },
-  "homepage": "https://github.com/LavaMoat/lavamoat#readme",
-  "description": ""
+  "dependencies": {
+    "@endo/compartment-mapper": "1.5.0",
+    "@endo/evasive-transform": "1.3.4",
+    "@types/node": "18.19.74",
+    "chalk": "4.1.2",
+    "lavamoat-core": "^16.3.2",
+    "loggerr": "4.2.0",
+    "ses": "1.10.0",
+    "terminal-link": "3.0.0",
+    "type-fest": "4.30.0",
+    "yargs": "17.7.2"
+  },
+  "devDependencies": {
+    "@endo/eslint-plugin": "2.1.0",
+    "@jessie.js/eslint-plugin": "0.4.2",
+    "@types/json-stable-stringify": "1.1.0",
+    "json-stable-stringify": "1.2.0",
+    "memfs": "4.17.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "ava": {
+    "files": [
+      "test/**/*.spec.js"
+    ],
+    "timeout": "10s"
+  }
 }

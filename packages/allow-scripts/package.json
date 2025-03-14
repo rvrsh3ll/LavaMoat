@@ -1,40 +1,64 @@
 {
   "name": "@lavamoat/allow-scripts",
-  "version": "1.0.6",
-  "main": "src/index.js",
+  "version": "3.3.2",
+  "description": "A tool for running only the dependency lifecycle hooks specified in an allowlist.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LavaMoat/LavaMoat.git",
+    "directory": "packages/allow-scripts"
+  },
+  "homepage": "https://github.com/LavaMoat/LavaMoat/tree/main/packages/allow-scripts",
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": "^16.20.0 || ^18.0.0 || ^20.0.0 || ^22.0.0"
+  },
   "bin": {
     "allow-scripts": "src/cli.js"
   },
-  "license": "MIT",
-  "dependencies": {
-    "@npmcli/run-script": "^1.8.1",
-    "resolve": "^1.20.0",
-    "yargs": "^16.2.0"
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./setup": "./src/setup.js"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/LavaMoat/LavaMoat.git",
-    "directory": "packages/allow-scripts"
+  "types": "./types/index.d.ts",
+  "directories": {
+    "test": "test"
+  },
+  "files": [
+    "CHANGELOG.md",
+    "src",
+    "types",
+    "!*.tsbuildinfo",
+    "!tsconfig.json"
+  ],
+  "scripts": {
+    "lint:deps": "depcheck",
+    "test": "npm run test:run",
+    "test:prep": "node test/prepare.js",
+    "test:run": "ava"
+  },
+  "peerDependencies": {
+    "@lavamoat/preinstall-always-fail": "*"
+  },
+  "dependencies": {
+    "@lavamoat/aa": "^4.3.2",
+    "@npmcli/run-script": "8.1.0",
+    "bin-links": "4.0.4",
+    "npm-normalize-package-bin": "3.0.1",
+    "type-fest": "4.30.0",
+    "yargs": "17.7.2"
+  },
+  "devDependencies": {
+    "@types/npmcli__promise-spawn": "6.0.3"
   },
   "publishConfig": {
     "access": "public"
   },
-  "description": "A tool for running only the dependency lifecycle hooks specified in an allowlist.",
-  "directories": {
-    "test": "test"
-  },
-  "devDependencies": {
-    "eslint-plugin-ava": "^11.0.0",
-    "eslint-plugin-standard": "^5.0.0"
-  },
-  "scripts": {
-    "test": "yarn test:run",
-    "test:run": "ava test/index.js --timeout=2m",
-    "lint": "npm run lint:eslint && npm run lint:deps",
-    "lint:eslint": "eslint \"src/**/*.js\"",
-    "lint:fix": "eslint src/**/*.js --fix",
-    "lint:deps": "depcheck"
-  },
-  "author": "",
-  "homepage": "https://github.com/LavaMoat/LavaMoat/tree/main/packages/allow-scripts"
+  "ava": {
+    "files": [
+      "test/*.spec.js"
+    ],
+    "timeout": "60s"
+  }
 }
